@@ -1,0 +1,26 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# 开发环境设置指南
+- 使用 OxLint 进行代码检查
+- 使用 pnpm 包管理
+- Log和注释使用英文书写
+- Node.js >= 22
+- pnpm >= 9
+
+# install
+`pnpm install`
+
+# lint
+`pnpm run lint`
+
+# format
+`pnpm run format`
+
+# dev
+`pnpm run dev`
+
+# build
+`pnpm run build`
