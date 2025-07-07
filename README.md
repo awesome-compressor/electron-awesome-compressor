@@ -2,6 +2,7 @@
 
 一个基于 [browser-compress-image](https://github.com/awesome-compressor/browser-compress-image) 库构建的强大桌面多媒体文件压缩应用。使用 Electron + Vue 3 + TypeScript 打造，提供现代化的用户界面和高效的压缩算法。
 
+![Cover](https://github.com/user-attachments/assets/61a702d6-e313-4b35-ba0c-c2f2f4779613)
 ## ✨ 特性
 
 🖼️ **多格式图片压缩**
