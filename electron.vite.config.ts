@@ -41,6 +41,15 @@ export default defineConfig({
       dts: true,
     }),
     Unocss({}),
-    ]
+    ],
+    build: {
+      minify: 'esbuild',
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          preview: resolve('src/renderer/preview/index.html')
+        }
+      }
+    }
   }
 })

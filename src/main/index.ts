@@ -1,6 +1,19 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, protocol } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { presenter } from './presenter'
+
+// Register protocol schemes before app is ready
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'eacompressor',
+    privileges: {
+      standard: true,
+      secure: true,
+      allowServiceWorkers: true,
+      supportFetchAPI: true,
+    },
+  },
+])
 
 // Configure app command line switches for performance optimization
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required') // Allow video autoplay

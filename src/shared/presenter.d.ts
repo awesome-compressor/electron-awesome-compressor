@@ -16,6 +16,18 @@ export interface IWindowPresenter {
   closeWindow(windowId: number, forceClose?: boolean): Promise<void>
 }
 
+export interface IProtocolPresenter {
+  init(): Promise<void>
+  cleanup(): Promise<void>
+  registerProtocol(scheme: string, handler: (request: Electron.ProtocolRequest, callback: (response: string | Electron.ProtocolResponse) => void) => void): void
+  unregisterProtocol(scheme: string): void
+  getRegisteredProtocols(): string[]
+  openExternalLink(url: string): Promise<{ success: boolean; error?: string }>
+  openPath(path: string): Promise<{ success: boolean; error?: string }>
+  showInFolder(path: string): Promise<{ success: boolean; error?: string }>
+}
+
 export interface IPresenter {
   windowPresenter: IWindowPresenter
+  protocolPresenter: IProtocolPresenter
 }

@@ -10,7 +10,7 @@ import {
 import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
 import { download } from 'lazy-js-utils'
-import { h } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { compress } from '@simon_he/browser-compress-image'
 import 'img-comparison-slider/dist/styles.css'
 
@@ -100,11 +100,11 @@ onUnmounted(() => {
 })
 
 // 拖拽事件处理
-function handleDragOver(e: DragEvent) {
+function handleDragOver(e: DragEvent): void {
   e.preventDefault()
 }
 
-function handleDragEnter(e: DragEvent) {
+function handleDragEnter(e: DragEvent): void {
   e.preventDefault()
   if (e.dataTransfer?.items) {
     // 检查是否包含图片文件或文件夹
@@ -119,7 +119,7 @@ function handleDragEnter(e: DragEvent) {
   }
 }
 
-function handleDragLeave(e: DragEvent) {
+function handleDragLeave(e: DragEvent): void {
   e.preventDefault()
   // 只有当离开整个应用区域时才设置为false
   if (
@@ -130,7 +130,7 @@ function handleDragLeave(e: DragEvent) {
   }
 }
 
-async function handleDrop(e: DragEvent) {
+async function handleDrop(e: DragEvent): Promise<void>  {
   e.preventDefault()
   isDragOver.value = false
 
@@ -311,7 +311,7 @@ async function processEntry(
 }
 
 // 文件输入框变化处理
-async function handleFileInputChange() {
+async function handleFileInputChange(): Promise<void> {
   const selectedFiles = Array.from(fileRef.value.files || []) as File[]
   if (selectedFiles.length > 0) {
     loading.value = true
@@ -333,7 +333,7 @@ async function handleFileInputChange() {
 }
 
 // 添加新图片到列表
-async function addNewImages(files: File[]) {
+async function addNewImages(files: File[]): Promise<void> {
   const newItems: ImageItem[] = files.map((file) => ({
     id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     file,
@@ -393,7 +393,7 @@ async function compressImage(item: ImageItem): Promise<void> {
 }
 
 // 批量压缩图片
-async function compressImages(items: ImageItem[] = imageItems.value) {
+async function compressImages(items: ImageItem[] = imageItems.value): Promise<void> {
   isCompressingAll.value = true
 
   try {
@@ -409,13 +409,13 @@ async function compressImages(items: ImageItem[] = imageItems.value) {
 }
 
 // 单张图片质量改变处理
-async function handleImageQualityChange(item: ImageItem, newQuality: number) {
+async function handleImageQualityChange(item: ImageItem, newQuality: number): Promise<void> {
   item.quality = newQuality
   await compressImage(item)
 }
 
 // 优化图片渲染性能，减少滚动时的模糊
-function optimizeImageRendering() {
+function optimizeImageRendering(): void {
   console.log('开始优化图片渲染')
 
   // 等待DOM更新
@@ -440,7 +440,7 @@ function optimizeImageRendering() {
         img.style.animation = 'none'
         img.style.filter = 'none'
         // 强制重绘以确保立即生效
-        img.offsetHeight
+        // img.offsetHeight
       }
     })
 
@@ -455,14 +455,14 @@ function optimizeImageRendering() {
         slider.style.visibility = 'visible'
         slider.style.transition = 'none'
         // 强制重绘
-        slider.offsetHeight
+        // slider.offsetHeight
       }
     })
   }, 100)
 }
 
 // 删除单个图片
-function deleteImage(index: number) {
+function deleteImage(index: number): void {
   const item = imageItems.value[index]
   URL.revokeObjectURL(item.originalUrl)
   if (item.compressedUrl) {
@@ -478,7 +478,7 @@ function deleteImage(index: number) {
 }
 
 // 清空所有图片
-function clearAllImages() {
+function clearAllImages(): void {
   imageItems.value.forEach((item) => {
     URL.revokeObjectURL(item.originalUrl)
     if (item.compressedUrl) {
@@ -491,12 +491,12 @@ function clearAllImages() {
 }
 
 // 上传图片
-function uploadImages() {
+function uploadImages(): void {
   document.getElementById('file')?.click()
 }
 
 // 下载单个图片
-async function downloadImage(item: ImageItem) {
+async function downloadImage(item: ImageItem): Promise<void> {
   if (!item.compressedUrl) return
 
   try {
@@ -515,7 +515,8 @@ async function downloadImage(item: ImageItem) {
       type: 'success',
       duration: 2000,
     })
-  } catch (error) {
+  } catch (error: unknown) {
+    console.error('Download failed:', error)
     ElMessage({
       message: 'Download failed. Please try again.',
       type: 'error',
@@ -524,7 +525,7 @@ async function downloadImage(item: ImageItem) {
 }
 
 // 批量下载所有图片
-async function downloadAllImages() {
+async function downloadAllImages(): Promise<void> {
   if (downloading.value) return
 
   const downloadableItems = imageItems.value.filter(
@@ -569,7 +570,8 @@ async function downloadAllImages() {
       type: 'success',
       duration: 4000,
     })
-  } catch (error) {
+  } catch (error: unknown) {
+    console.error('Batch download failed:', error)
     ElMessage({
       message: 'Batch download failed. Please try again.',
       type: 'error',
@@ -589,7 +591,7 @@ function formatFileSize(bytes: number): string {
 }
 
 // 切换当前预览图片
-function setCurrentImage(index: number) {
+function setCurrentImage(index: number): void  {
   currentImageIndex.value = index
 }
 </script>
@@ -1157,11 +1159,13 @@ function setCurrentImage(index: number) {
   z-index: 1;
   text-align: center;
   padding: 60px 20px 40px;
+  touch-action: none;
 }
 
 .title-container {
   width: 100%;
   margin: 0 auto;
+  app-region: drag;
 }
 
 .main-title {

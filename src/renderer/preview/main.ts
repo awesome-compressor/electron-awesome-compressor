@@ -5,7 +5,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 // import { gitFork } from '@simon_he/git-fork'
 import App from './App.vue'
 import '@unocss/reset/tailwind.css'
-import './styles/main.css'
 import 'uno.css'
 import 'element-plus/dist/index.css'
 

@@ -25,22 +25,36 @@ export class WindowPresenter implements IWindowPresenter {
    * Create and configure main window
    */
   private async createMainWindow(): Promise<void> {
+
     // Create the browser window
     this.mainWindow = new BrowserWindow({
       width: 900,
       height: 670,
       show: false,
       autoHideMenuBar: true,
+      hasShadow: true, // macOS 阴影
+      trafficLightPosition: process.platform === 'darwin' ? { x: 12, y: 12 } : undefined, // macOS 红绿灯按钮位置
+      frame: process.platform === 'darwin', // macOS 无边框
+      vibrancy: process.platform === 'darwin' ? 'under-window' : undefined, // macOS 磨砂效果
+      backgroundColor: '#00000000', // 透明背景色
+      maximizable: true, // 允许最大化
+      transparent: process.platform === 'darwin', // macOS 标题栏透明
+      titleBarStyle: 'hiddenInset', // macOS 风格标题栏
       ...(process.platform === 'linux' ? { icon } : {}),
       webPreferences: {
-        preload: join(__dirname, '../../preload/index.js'),
-        sandbox: false
-      }
+        preload: join(__dirname, '../preload/index.mjs'), // Preload 脚本路径
+        sandbox: false,
+        devTools: is.dev // 开发模式下启用 DevTools
+      },
+      roundedCorners: true // Windows 11 圆角
     })
 
     // Handle window ready to show
     this.mainWindow.on('ready-to-show', () => {
       this.mainWindow?.show()
+      if (is.dev) {
+        this.mainWindow?.webContents.openDevTools()
+      }
     })
 
     // Handle external links
@@ -60,6 +74,12 @@ export class WindowPresenter implements IWindowPresenter {
     } else {
       this.mainWindow.loadFile(join(__dirname, '../../renderer/index.html'))
     }
+    // 处理外部链接
+    this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      // 使用系统默认浏览器打开链接
+      shell.openExternal(url)
+      return { action: 'deny' }
+    })
   }
 
   /**
@@ -98,7 +118,7 @@ export class WindowPresenter implements IWindowPresenter {
       }
     })
 
-    ipcMain.handle('window-show', (event, windowId?: number) => {
+    ipcMain.handle('window-show', (_event, windowId?: number) => {
       this.show(windowId)
     })
 
@@ -127,7 +147,7 @@ export class WindowPresenter implements IWindowPresenter {
       parent: this.mainWindow,
       modal: false,
       webPreferences: {
-        preload: join(__dirname, '../../preload/index.js'),
+        preload: join(__dirname, '../../preload/index.mjs'),
         sandbox: false
       }
     })
