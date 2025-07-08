@@ -45,15 +45,19 @@ export class ProtocolPresenter implements IProtocolPresenter {
 
     // Register eacompressor-file:// protocol for accessing compressed files
     protocol.registerFileProtocol('eacompressor-file', (request, callback) => {
-      const url = request.url.replace('eacompressor-file://', '')
-      const filePath = decodeURIComponent(url)
+      try {
+        const base64Path = request.url.replace('eacompressor-file://', '')
+        const filePath = decodeURIComponent(base64Path)
+        console.log(`[Protocol] eacompressor-file request: ${request.url}`)
+        console.log(`[Protocol] Extracted base64: ${base64Path}`)
+        console.log(`[Protocol] Decoded file path: ${filePath}`)
 
-      console.log(`[Protocol] eacompressor-file request: ${request.url}`)
-      console.log(`[Protocol] Extracted URL: ${url}`)
-      console.log(`[Protocol] Final file path: ${filePath}`)
-
-      // Validate that the path is within the temp directory for security
-      this.validateAndRespondWithFile(filePath, callback)
+        // Validate that the path is within the temp directory for security
+        this.validateAndRespondWithFile(filePath, callback)
+      } catch (error) {
+        console.error('[Protocol] Error decoding base64 path:', error)
+        callback({ statusCode: 400, data: 'Invalid path encoding' })
+      }
     })
 
     this.registeredProtocols.push('eacompressor')

@@ -14,7 +14,9 @@ const api = {
   getPathForFile: (file: File) => {
     return webUtils.getPathForFile(file)
   },
-
+  getBase64: (str: string) => {
+    return Buffer.from(str).toString('base64')
+  },
 }
 exposeElectronAPI()
 

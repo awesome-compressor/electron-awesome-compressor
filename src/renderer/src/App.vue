@@ -54,7 +54,6 @@ const currentImageIndex = ref(0)
 // Get presenter instances
 const nodeCompressPresenter = usePresenter('nodeCompressPresenter')
 
-// 图片列表状态
 const imageItems = ref<ImageItem[]>([])
 const supportType = ['image/png', 'image/jpg', 'image/jpeg', 'image/gif']
 
@@ -410,7 +409,7 @@ async function compressImage(item: ImageItem): Promise<void> {
     console.log('Browser compression completed:')
     console.log('最优工具:', allResults.bestTool)
     console.log('最优结果:', allResults.bestResult)
-    console.log('所有结果:')
+    console.log('所有结果:', allResults.allResults)
     allResults.allResults.forEach((result) => {
       console.log(
         `${result.tool}: ${result.compressedSize} bytes (${result.compressionRatio.toFixed(1)}% reduction)`,
@@ -442,7 +441,6 @@ async function compressImage(item: ImageItem): Promise<void> {
           // 移除该工具的旧结果并添加新结果
           item.compressionResults = item.compressionResults.filter(r => r.tool !== tool)
           item.compressionResults.push(newResult)
-
           // 每次有新结果就立即重新排序并更新显示
           sortCompressionResults(item)
 
@@ -463,7 +461,12 @@ async function compressImage(item: ImageItem): Promise<void> {
       error instanceof Error ? error.message : 'Compression failed'
   } finally {
     console.log('browser compression finished')
-    item.isBrowserCompressing = false
+    imageItems.value = imageItems.value.map(item => {
+      if (item.file.name === item.file.name) {
+        return { ...item, isBrowserCompressing: false }
+      }
+      return item
+    })
   }
 }
 
@@ -509,13 +512,13 @@ async function compressWithNode(item: ImageItem): Promise<void> {
     )
 
     if (result && result.bestTool) {
-      // 确保文件路径正确编码，避免特殊字符问题
-      const encodedPath = encodeURI(result.bestFilePath)
+      // 使用 base64 编码文件路径以提高安全性
+      const base64Path = encodeURIComponent(result.bestFilePath)
 
       // 添加node压缩结果到已有结果中
       const nodeResult: CompressionResult = {
         tool: `node-${result.bestTool}`,
-        compressedUrl: `eacompressor-file://${encodedPath.startsWith('/') ? encodedPath : '/' + encodedPath}`,
+        compressedUrl: `eacompressor-file://${base64Path}`,
         compressedSize: result.allResults[0]?.compressedSize || 0,
         compressionRatio: result.compressionRatio,
         blob: null, // Node结果不是blob
@@ -537,7 +540,12 @@ async function compressWithNode(item: ImageItem): Promise<void> {
     // 如果node压缩失败，不要影响整体流程，只记录错误
   } finally {
     console.log('node compression finished')
-    item.isNodeCompressing = false
+    imageItems.value = imageItems.value.map(item => {
+      if (item.file.name === item.file.name) {
+        return { ...item, isNodeCompressing: false }
+      }
+      return item
+    })
   }
 }
 
@@ -879,8 +887,6 @@ function setCurrentImage(index: number): void {
           <div v-for="(item, index) in imageItems" :key="item.id" class="image-card"
             :class="{ active: index === currentImageIndex }" @click="setCurrentImage(index)">
 
-              {{ item.isBrowserCompressing }}
-              {{ item.isNodeCompressing }}
             <div class="image-preview">
               <img style="object-fit: contain" :src="item.originalUrl" :alt="item.file.name" />
               <div v-if="item.isBrowserCompressing || item.isNodeCompressing" class="compressing-overlay">
