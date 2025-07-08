@@ -806,7 +806,7 @@ function setCurrentImage(index: number): void {
     <!-- Header -->
     <header class="header-section" :class="{ 'macos-header': isMacOS }">
       <div class="title-container">
-        <vivid-typing content="Browser Compress Image" class="main-title" />
+        <vivid-typing content="Electron Awesome Compressor" class="main-title" />
         <p class="subtitle">
           Compress your images with multiple algorithms • Find the best compression
         </p>
