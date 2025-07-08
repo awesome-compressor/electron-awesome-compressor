@@ -33,7 +33,12 @@ export class WindowPresenter implements IWindowPresenter {
   /**
    * Calculate optimal preview window dimensions and position
    */
-  private calculatePreviewWindowDimensions(): { width: number; height: number; x: number; y: number } {
+  private calculatePreviewWindowDimensions(): {
+    width: number
+    height: number
+    x: number
+    y: number
+  } {
     const primaryDisplay = screen.getPrimaryDisplay()
     const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
@@ -230,7 +235,9 @@ export class WindowPresenter implements IWindowPresenter {
 
     // Load preview content (for now, same as main window)
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      previewWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/preview/index.html?fileId=${fileId}`)
+      previewWindow.loadURL(
+        `${process.env['ELECTRON_RENDERER_URL']}#/preview/index.html?fileId=${fileId}`
+      )
     } else {
       previewWindow.loadFile(join(__dirname, '../../renderer/preview/index.html'), {
         hash: `/?fileId=${fileId}`

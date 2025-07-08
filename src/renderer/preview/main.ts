@@ -11,7 +11,7 @@ import 'element-plus/dist/index.css'
 const app = createApp(App)
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes:[],
+  routes: []
 })
 app.use(router)
 app.use(ElementPlus)

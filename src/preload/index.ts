@@ -1,7 +1,6 @@
 import { clipboard, contextBridge, nativeImage, webUtils } from 'electron'
 import { exposeElectronAPI } from '@electron-toolkit/preload'
 
-
 // Custom APIs for renderer
 const api = {
   copyText: (text: string) => {
@@ -16,7 +15,7 @@ const api = {
   },
   getBase64: (str: string) => {
     return Buffer.from(str).toString('base64')
-  },
+  }
 }
 exposeElectronAPI()
 

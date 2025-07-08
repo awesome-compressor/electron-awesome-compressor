@@ -31,16 +31,17 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [vue(),
-    Pages(),
-    AutoImport({
-      imports: ['vue', 'vue-router', '@vueuse/core'],
-      dts: true,
-    }),
-    Components({
-      dts: true,
-    }),
-    Unocss({}),
+    plugins: [
+      vue(),
+      Pages(),
+      AutoImport({
+        imports: ['vue', 'vue-router', '@vueuse/core'],
+        dts: true
+      }),
+      Components({
+        dts: true
+      }),
+      Unocss({})
     ],
     build: {
       minify: 'esbuild',

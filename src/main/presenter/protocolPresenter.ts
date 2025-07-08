@@ -26,8 +26,8 @@ export class ProtocolPresenter implements IProtocolPresenter {
   }
 
   /**
- * Register custom protocol schemes
- */
+   * Register custom protocol schemes
+   */
   private registerCustomProtocols(): void {
     // Register eacompressor:// protocol
     protocol.registerStringProtocol('eacompressor', (request, callback) => {
@@ -201,8 +201,8 @@ export class ProtocolPresenter implements IProtocolPresenter {
   }
 
   /**
- * Setup external link handlers
- */
+   * Setup external link handlers
+   */
   private setupExternalLinkHandlers(): void {
     // External link handling is now done through presenter methods
     // No direct IPC handlers needed
@@ -313,7 +313,13 @@ export class ProtocolPresenter implements IProtocolPresenter {
   /**
    * Register additional protocol scheme
    */
-  registerProtocol(scheme: string, handler: (request: Electron.ProtocolRequest, callback: (response: string | Electron.ProtocolResponse) => void) => void): void {
+  registerProtocol(
+    scheme: string,
+    handler: (
+      request: Electron.ProtocolRequest,
+      callback: (response: string | Electron.ProtocolResponse) => void
+    ) => void
+  ): void {
     if (!this.registeredProtocols.includes(scheme)) {
       protocol.registerStringProtocol(scheme, handler)
       this.registeredProtocols.push(scheme)
@@ -327,7 +333,7 @@ export class ProtocolPresenter implements IProtocolPresenter {
   unregisterProtocol(scheme: string): void {
     if (this.registeredProtocols.includes(scheme)) {
       protocol.unregisterProtocol(scheme)
-      this.registeredProtocols = this.registeredProtocols.filter(p => p !== scheme)
+      this.registeredProtocols = this.registeredProtocols.filter((p) => p !== scheme)
       console.log(`Unregistered protocol: ${scheme}`)
     }
   }
@@ -346,7 +352,7 @@ export class ProtocolPresenter implements IProtocolPresenter {
     console.log('ProtocolPresenter cleanup')
 
     // Unregister all protocols
-    this.registeredProtocols.forEach(scheme => {
+    this.registeredProtocols.forEach((scheme) => {
       protocol.unregisterProtocol(scheme)
     })
 

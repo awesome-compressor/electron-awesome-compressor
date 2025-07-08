@@ -5,7 +5,7 @@ import {
   FolderOpened,
   Loading,
   Picture,
-  Upload,
+  Upload
 } from '@element-plus/icons-vue'
 import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
@@ -14,7 +14,6 @@ import { computed, h, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { compress } from '@awesome-compressor/browser-compress-image'
 import { usePresenter } from './composables/usePresenter'
 import 'img-comparison-slider/dist/styles.css'
-
 
 // 导入 img-comparison-slider
 import('img-comparison-slider')
@@ -37,7 +36,6 @@ interface ImageItem {
   browserCompressionStarted: boolean // 是否已经开始browser压缩
   nodeCompressionStarted: boolean // 是否已经开始node压缩
 }
-
 
 // 压缩结果接口
 interface CompressionResult {
@@ -65,38 +63,30 @@ const supportType = ['image/png', 'image/jpg', 'image/jpeg', 'image/gif']
 const hasImages = computed(() => imageItems.value.length > 0)
 const currentImage = computed(() => imageItems.value[currentImageIndex.value])
 const totalOriginalSize = computed(() =>
-  imageItems.value.reduce((sum, item) => sum + item.originalSize, 0),
+  imageItems.value.reduce((sum, item) => sum + item.originalSize, 0)
 )
 const totalCompressedSize = computed(() =>
   imageItems.value.reduce((sum, item) => {
-    const bestResult = item.compressionResults.find(r => r.isBest)
+    const bestResult = item.compressionResults.find((r) => r.isBest)
     return sum + (bestResult?.compressedSize || 0)
-  }, 0),
+  }, 0)
 )
 const totalCompressionRatio = computed(() => {
   if (totalOriginalSize.value === 0) return 0
-  return (
-    ((totalOriginalSize.value - totalCompressedSize.value) /
-      totalOriginalSize.value) *
-    100
-  )
+  return ((totalOriginalSize.value - totalCompressedSize.value) / totalOriginalSize.value) * 100
 })
 const compressedCount = computed(
   () =>
-    imageItems.value.filter(
-      (item) => {
-        // 计算已完成压缩的图片数量
-        // 条件：有压缩结果 或者 两个压缩流程都已完成（即使失败）
-        const hasResults = item.compressionResults.length > 0
-        const compressionFinished = !item.isBrowserCompressing && !item.isNodeCompressing
-        return hasResults || compressionFinished
-      },
-    ).length,
+    imageItems.value.filter((item) => {
+      // 计算已完成压缩的图片数量
+      // 条件：有压缩结果 或者 两个压缩流程都已完成（即使失败）
+      const hasResults = item.compressionResults.length > 0
+      const compressionFinished = !item.isBrowserCompressing && !item.isNodeCompressing
+      return hasResults || compressionFinished
+    }).length
 )
 const allCompressed = computed(
-  () =>
-    imageItems.value.length > 0 &&
-    compressedCount.value === imageItems.value.length,
+  () => imageItems.value.length > 0 && compressedCount.value === imageItems.value.length
 )
 
 // 检测操作系统
@@ -140,7 +130,7 @@ function handleDragEnter(e: DragEvent): void {
     const hasImageOrFolder = Array.from(e.dataTransfer.items).some(
       (item) =>
         (item.kind === 'file' && item.type.startsWith('image/')) ||
-        (item.kind === 'file' && item.type === ''),
+        (item.kind === 'file' && item.type === '')
     )
     if (hasImageOrFolder) {
       isDragOver.value = true
@@ -180,7 +170,7 @@ async function handleDrop(e: DragEvent): Promise<void> {
       console.log(
         'extractFilesFromDataTransfer 结果:',
         files.length,
-        files.map((f) => f.name),
+        files.map((f) => f.name)
       )
     }
 
@@ -191,7 +181,7 @@ async function handleDrop(e: DragEvent): Promise<void> {
       console.log(
         '传统 API 结果:',
         files.length,
-        files.map((f) => f.name),
+        files.map((f) => f.name)
       )
     }
 
@@ -199,7 +189,7 @@ async function handleDrop(e: DragEvent): Promise<void> {
       console.warn('没有找到任何文件')
       ElMessage({
         message: 'No files found. Please try again.',
-        type: 'warning',
+        type: 'warning'
       })
       return
     }
@@ -208,14 +198,13 @@ async function handleDrop(e: DragEvent): Promise<void> {
     console.log(
       '过滤后的图片文件:',
       imageFiles.length,
-      imageFiles.map((f) => f.name),
+      imageFiles.map((f) => f.name)
     )
 
     if (imageFiles.length === 0) {
       ElMessage({
-        message:
-          'No valid image files found. Please drop PNG, JPG, JPEG, or GIF files.',
-        type: 'warning',
+        message: 'No valid image files found. Please drop PNG, JPG, JPEG, or GIF files.',
+        type: 'warning'
       })
       return
     }
@@ -224,21 +213,19 @@ async function handleDrop(e: DragEvent): Promise<void> {
 
     ElMessage({
       message: `Successfully loaded ${imageFiles.length} image(s)`,
-      type: 'success',
+      type: 'success'
     })
   } catch (error) {
     console.error('Error processing dropped files:', error)
     ElMessage({
       message: 'Error processing files. Please try again.',
-      type: 'error',
+      type: 'error'
     })
   }
 }
 
 // 从DataTransfer中提取所有文件（包括文件夹中的文件）
-async function extractFilesFromDataTransfer(
-  items: DataTransferItemList,
-): Promise<File[]> {
+async function extractFilesFromDataTransfer(items: DataTransferItemList): Promise<File[]> {
   console.log('extractFilesFromDataTransfer 开始处理', items.length, '个 items')
 
   const promises: Promise<File[]>[] = []
@@ -259,10 +246,10 @@ async function extractFilesFromDataTransfer(
             console.log(
               `Item ${i} processEntry 完成，文件数:`,
               itemFiles.length,
-              itemFiles.map((f) => f.name),
+              itemFiles.map((f) => f.name)
             )
             return itemFiles
-          }),
+          })
         )
       } else {
         // 回退到传统文件API - 当webkitGetAsEntry返回null时
@@ -287,22 +274,14 @@ async function extractFilesFromDataTransfer(
     'extractFilesFromDataTransfer 完成，总共',
     files.length,
     '个文件:',
-    files.map((f) => f.name),
+    files.map((f) => f.name)
   )
   return files
 }
 
 // 递归处理文件和文件夹
-async function processEntry(
-  entry: FileSystemEntry,
-  files: File[],
-): Promise<void> {
-  console.log(
-    'processEntry 开始处理:',
-    entry.name,
-    entry.isFile,
-    entry.isDirectory,
-  )
+async function processEntry(entry: FileSystemEntry, files: File[]): Promise<void> {
+  console.log('processEntry 开始处理:', entry.name, entry.isFile, entry.isDirectory)
 
   if (entry.isFile) {
     const fileEntry = entry as FileSystemFileEntry
@@ -340,20 +319,18 @@ async function handleFileInputChange(): Promise<void> {
   const selectedFiles = Array.from(fileRef.value.files || []) as File[]
   if (selectedFiles.length > 0) {
     try {
-      const imageFiles = selectedFiles.filter((file) =>
-        supportType.includes(file.type),
-      )
+      const imageFiles = selectedFiles.filter((file) => supportType.includes(file.type))
       await addNewImages(imageFiles)
 
       ElMessage({
         message: `Successfully loaded ${imageFiles.length} image(s)`,
-        type: 'success',
+        type: 'success'
       })
     } catch (error) {
       console.error('Error processing files:', error)
       ElMessage({
         message: 'Error processing files. Please try again.',
-        type: 'error',
+        type: 'error'
       })
     }
   }
@@ -372,7 +349,7 @@ async function addNewImages(files: File[]): Promise<void> {
     compressionResults: [],
     // 初始化新的标记位
     browserCompressionStarted: false,
-    nodeCompressionStarted: false,
+    nodeCompressionStarted: false
   }))
 
   // 如果之前没有图片，默认选中第一张
@@ -400,7 +377,7 @@ async function compressImage(item: ImageItem): Promise<void> {
 
   try {
     // 保留现有的 node 压缩结果（用于日志记录）
-    const existingNodeResults = item.compressionResults.filter(r => r.tool.startsWith('node-'))
+    const existingNodeResults = item.compressionResults.filter((r) => r.tool.startsWith('node-'))
     if (existingNodeResults.length > 0) {
       console.log('Preserving existing node results:', existingNodeResults.length)
     }
@@ -410,7 +387,7 @@ async function compressImage(item: ImageItem): Promise<void> {
       quality: item.quality / 100,
       preserveExif: false,
       returnAllResults: true, // 返回所有工具的结果
-      type: 'blob',
+      type: 'blob'
     })
 
     console.log('Browser compression completed:')
@@ -422,14 +399,15 @@ async function compressImage(item: ImageItem): Promise<void> {
     if (allResults.allResults && allResults.allResults.length > 0) {
       for (const resultItem of allResults.allResults) {
         console.log(
-        `${resultItem.tool}: ${resultItem.compressedSize} bytes (${resultItem.compressionRatio.toFixed(1)}% reduction)`,
-      )
+          `${resultItem.tool}: ${resultItem.compressedSize} bytes (${resultItem.compressionRatio.toFixed(1)}% reduction)`
+        )
         if (resultItem && resultItem.result && resultItem.result instanceof Blob) {
           // 从结果项中提取数据
           const tool = resultItem.tool || 'unknown'
           const result = resultItem.result
           const compressedSize = resultItem.compressedSize || result.size
-          const compressionRatio = resultItem.compressionRatio ||
+          const compressionRatio =
+            resultItem.compressionRatio ||
             ((item.originalSize - result.size) / item.originalSize) * 100
 
           const compressedUrl = URL.createObjectURL(result)
@@ -444,12 +422,14 @@ async function compressImage(item: ImageItem): Promise<void> {
           }
 
           // 移除该工具的旧结果并添加新结果
-          item.compressionResults = item.compressionResults.filter(r => r.tool !== tool)
+          item.compressionResults = item.compressionResults.filter((r) => r.tool !== tool)
           item.compressionResults.push(newResult)
           // 每次有新结果就立即重新排序并更新显示
           sortCompressionResults(item)
 
-          console.log(`${tool} compression completed: ${compressedSize} bytes (${compressionRatio.toFixed(1)}% reduction)`)
+          console.log(
+            `${tool} compression completed: ${compressedSize} bytes (${compressionRatio.toFixed(1)}% reduction)`
+          )
         } else {
           console.warn('Invalid result object:', resultItem)
         }
@@ -462,8 +442,7 @@ async function compressImage(item: ImageItem): Promise<void> {
     })
   } catch (error) {
     console.error('Compression error:', error)
-    item.compressionError =
-      error instanceof Error ? error.message : 'Compression failed'
+    item.compressionError = error instanceof Error ? error.message : 'Compression failed'
   } finally {
     console.log('browser compression finished')
     item.isBrowserCompressing = false
@@ -474,12 +453,12 @@ async function compressImage(item: ImageItem): Promise<void> {
 function startCompressionForUnprocessedImages(): void {
   // 找出需要开始browser压缩的图片
   const needsBrowserCompression = imageItems.value.filter(
-    item => !item.browserCompressionStarted && !item.isBrowserCompressing
+    (item) => !item.browserCompressionStarted && !item.isBrowserCompressing
   )
 
   // 找出需要开始node压缩的图片
   const needsNodeCompression = imageItems.value.filter(
-    item => !item.nodeCompressionStarted && !item.isNodeCompressing
+    (item) => !item.nodeCompressionStarted && !item.isNodeCompressing
   )
 
   // 并行启动browser压缩
@@ -489,7 +468,7 @@ function startCompressionForUnprocessedImages(): void {
 
   // 并行启动node压缩
   if (needsNodeCompression.length > 0) {
-    needsNodeCompression.forEach(item => {
+    needsNodeCompression.forEach((item) => {
       compressWithNode(item) // 函数内部会设置 nodeCompressionStarted = true
     })
   }
@@ -502,9 +481,11 @@ async function compressImagesSequentially(items: ImageItem[]): Promise<void> {
     const batchSize = 3
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize)
-      await Promise.all(batch.map((item) => {
-        return compressImage(item) // 函数内部会设置 browserCompressionStarted = true
-      }))
+      await Promise.all(
+        batch.map((item) => {
+          return compressImage(item) // 函数内部会设置 browserCompressionStarted = true
+        })
+      )
     }
   } catch (error) {
     console.error('Batch compression error:', error)
@@ -530,14 +511,10 @@ async function compressWithNode(item: ImageItem): Promise<void> {
     const uint8Array = new Uint8Array(arrayBuffer)
 
     // 使用presenter调用node压缩，传递字节数组而不是Buffer
-    const result = await nodeCompressPresenter.compressImageFromBytes(
-      uint8Array,
-      item.file.name,
-      {
-        quality: item.quality / 100,
-        preserveExif: false
-      }
-    )
+    const result = await nodeCompressPresenter.compressImageFromBytes(uint8Array, item.file.name, {
+      quality: item.quality / 100,
+      preserveExif: false
+    })
 
     if (result && result.bestTool && result.bestFileId) {
       // 使用文件ID而不是文件路径
@@ -560,7 +537,9 @@ async function compressWithNode(item: ImageItem): Promise<void> {
       item.compressionResults.push(nodeResult)
       sortCompressionResults(item)
 
-      console.log(`Node compression completed for ${item.file.name}: ${result.compressionRatio.toFixed(1)}%`)
+      console.log(
+        `Node compression completed for ${item.file.name}: ${result.compressionRatio.toFixed(1)}%`
+      )
       console.log(`Generated protocol URL: ${nodeResult.compressedUrl}`)
       console.log(`File ID: ${fileId}`)
     } else {
@@ -580,7 +559,7 @@ function sortCompressionResults(item: ImageItem): void {
   if (item.compressionResults.length === 0) return
 
   // 过滤出有效的结果（压缩率大于0的）
-  const validResults = item.compressionResults.filter(result => result.compressionRatio > 0)
+  const validResults = item.compressionResults.filter((result) => result.compressionRatio > 0)
 
   // 按压缩率从高到低排序
   item.compressionResults.sort((a, b) => b.compressionRatio - a.compressionRatio)
@@ -656,14 +635,15 @@ function uploadImages(): void {
 }
 
 // 下载单个压缩结果
-async function downloadCompressionResult(item: ImageItem, result: CompressionResult): Promise<void> {
+async function downloadCompressionResult(
+  item: ImageItem,
+  result: CompressionResult
+): Promise<void> {
   try {
     const originalName = item.file.name
     const lastDotIndex = originalName.lastIndexOf('.')
-    const nameWithoutExt =
-      lastDotIndex > 0 ? originalName.substring(0, lastDotIndex) : originalName
-    const extension =
-      lastDotIndex > 0 ? originalName.substring(lastDotIndex) : ''
+    const nameWithoutExt = lastDotIndex > 0 ? originalName.substring(0, lastDotIndex) : originalName
+    const extension = lastDotIndex > 0 ? originalName.substring(lastDotIndex) : ''
     const compressedFileName = `${nameWithoutExt}_${result.tool}${extension}`
 
     download(result.compressedUrl, compressedFileName)
@@ -671,13 +651,13 @@ async function downloadCompressionResult(item: ImageItem, result: CompressionRes
     ElMessage({
       message: `Downloaded: ${compressedFileName}`,
       type: 'success',
-      duration: 2000,
+      duration: 2000
     })
   } catch (error: unknown) {
     console.error('Download failed:', error)
     ElMessage({
       message: 'Download failed. Please try again.',
-      type: 'error',
+      type: 'error'
     })
   }
 }
@@ -701,7 +681,12 @@ async function previewCompressionResult(item: ImageItem, result: CompressionResu
     }
 
     // 调用 presenter 方法
-    await window.electron.ipcRenderer.invoke('presenter:call', 'windowPresenter', 'previewComparison', previewData)
+    await window.electron.ipcRenderer.invoke(
+      'presenter:call',
+      'windowPresenter',
+      'previewComparison',
+      previewData
+    )
   } catch (error) {
     console.error('Failed to open preview:', error)
     ElMessage({
@@ -716,12 +701,12 @@ async function downloadAllImages(): Promise<void> {
   if (downloading.value) return
 
   const downloadableItems = imageItems.value.filter(
-    (item) => item.compressionResults.length > 0 && !item.compressionError,
+    (item) => item.compressionResults.length > 0 && !item.compressionError
   )
   if (downloadableItems.length === 0) {
     ElMessage({
       message: 'No compressed results to download',
-      type: 'warning',
+      type: 'warning'
     })
     return
   }
@@ -745,25 +730,25 @@ async function downloadAllImages(): Promise<void> {
         h(
           'div',
           { style: 'color: #16a34a; font-weight: 500; margin-bottom: 4px;' },
-          `Successfully downloaded ${downloadableItems.length} results!`,
+          `Successfully downloaded ${downloadableItems.length} results!`
         ),
         h(
           'div',
           {
             style:
-              'color: #059669; font-size: 13px; font-family: monospace; background: rgba(5, 150, 105, 0.1); padding: 2px 6px; border-radius: 4px;',
+              'color: #059669; font-size: 13px; font-family: monospace; background: rgba(5, 150, 105, 0.1); padding: 2px 6px; border-radius: 4px;'
           },
-          `Total saved: ${totalCompressionRatio.value.toFixed(1)}%`,
-        ),
+          `Total saved: ${totalCompressionRatio.value.toFixed(1)}%`
+        )
       ]),
       type: 'success',
-      duration: 4000,
+      duration: 4000
     })
   } catch (error: unknown) {
     console.error('Batch download failed:', error)
     ElMessage({
       message: 'Batch download failed. Please try again.',
-      type: 'error',
+      type: 'error'
     })
   } finally {
     downloading.value = false
@@ -799,13 +784,9 @@ function setCurrentImage(index: number): void {
           <FolderOpened />
         </el-icon>
         <div class="drag-text">Drop images or folders here</div>
-        <div class="drag-subtitle">
-          Support multiple images and folder drag & drop
-        </div>
+        <div class="drag-subtitle">Support multiple images and folder drag & drop</div>
       </div>
     </div>
-
-
 
     <!-- Background Elements -->
     <div class="bg-decoration">
@@ -814,8 +795,13 @@ function setCurrentImage(index: number): void {
       <div class="bg-circle bg-circle-3" />
     </div>
 
-    <GitForkVue link="https://github.com/awesome-compressor/electron-awesome-compressor" position="right" type="corners"
-      content="Star on GitHub" color="#667eea" />
+    <GitForkVue
+      link="https://github.com/awesome-compressor/electron-awesome-compressor"
+      position="right"
+      type="corners"
+      content="Star on GitHub"
+      color="#667eea"
+    />
 
     <!-- Header -->
     <header class="header-section" :class="{ 'macos-header': isMacOS }">
@@ -837,8 +823,7 @@ function setCurrentImage(index: number): void {
           </el-icon>
           <span class="upload-text">Drop or Click to Upload Images</span>
           <span class="upload-hint">
-            Support PNG, JPG, JPEG, GIF formats • Multiple files & folders
-            supported
+            Support PNG, JPG, JPEG, GIF formats • Multiple files & folders supported
           </span>
         </button>
       </section>
@@ -876,8 +861,10 @@ function setCurrentImage(index: number): void {
 
         <div v-if="totalCompressedSize > 0" class="toolbar-section stats-section">
           <div class="stats-info">
-            <span class="size-label">Total: {{ formatFileSize(totalOriginalSize) }} →
-              {{ formatFileSize(totalCompressedSize) }}</span>
+            <span class="size-label"
+              >Total: {{ formatFileSize(totalOriginalSize) }} →
+              {{ formatFileSize(totalCompressedSize) }}</span
+            >
             <div class="savings-badge">
               <span class="saved-mini">-{{ totalCompressionRatio.toFixed(1) }}%</span>
             </div>
@@ -887,8 +874,13 @@ function setCurrentImage(index: number): void {
         <div v-if="allCompressed" class="toolbar-divider" />
 
         <div v-if="allCompressed" class="toolbar-section download-section">
-          <button class="download-btn-new" :class="[{ downloading }]" :disabled="downloading"
-            title="Download All Best Results" @click="downloadAllImages">
+          <button
+            class="download-btn-new"
+            :class="[{ downloading }]"
+            :disabled="downloading"
+            title="Download All Best Results"
+            @click="downloadAllImages"
+          >
             <div class="download-btn-content">
               <div class="download-icon">
                 <el-icon v-if="!downloading">
@@ -899,11 +891,7 @@ function setCurrentImage(index: number): void {
                 </el-icon>
               </div>
               <span class="download-text">
-                {{
-                  downloading
-                    ? 'Downloading...'
-                    : `Download All (${compressedCount})`
-                }}
+                {{ downloading ? 'Downloading...' : `Download All (${compressedCount})` }}
               </span>
             </div>
           </button>
@@ -914,12 +902,19 @@ function setCurrentImage(index: number): void {
       <section v-if="hasImages" class="images-section">
         <!-- 图片列表缩略图 -->
         <div class="images-grid">
-          <div v-for="(item, index) in imageItems" :key="item.id" class="image-card"
-            :class="{ active: index === currentImageIndex }" @click="setCurrentImage(index)">
-
+          <div
+            v-for="(item, index) in imageItems"
+            :key="item.id"
+            class="image-card"
+            :class="{ active: index === currentImageIndex }"
+            @click="setCurrentImage(index)"
+          >
             <div class="image-preview">
               <img style="object-fit: contain" :src="item.originalUrl" :alt="item.file.name" />
-              <div v-if="item.isBrowserCompressing || item.isNodeCompressing" class="compressing-overlay">
+              <div
+                v-if="item.isBrowserCompressing || item.isNodeCompressing"
+                class="compressing-overlay"
+              >
                 <el-icon class="is-loading">
                   <Loading />
                 </el-icon>
@@ -933,22 +928,31 @@ function setCurrentImage(index: number): void {
                 {{ item.file.name }}
               </div>
               <div class="image-stats">
-                <span class="original-size">{{
-                  formatFileSize(item.originalSize)
-                  }}</span>
+                <span class="original-size">{{ formatFileSize(item.originalSize) }}</span>
                 <span v-if="item.compressionResults.length > 0" class="best-result">
-                  Best: {{item.compressionResults.find(r => r.isBest)?.tool}}
+                  Best: {{ item.compressionResults.find((r) => r.isBest)?.tool }}
                 </span>
               </div>
               <!-- 独立的质量控制 -->
               <div class="image-quality-control">
                 <span class="quality-label-small">Quality: {{ item.quality }}%</span>
-                <el-slider v-model="item.quality" :max="100" :step="5" class="image-quality-slider"
-                  :show-tooltip="false" size="small" @change="(val) => handleImageQualityChange(item, val)" />
+                <el-slider
+                  v-model="item.quality"
+                  :max="100"
+                  :step="5"
+                  class="image-quality-slider"
+                  :show-tooltip="false"
+                  size="small"
+                  @change="(val) => handleImageQualityChange(item, val)"
+                />
               </div>
             </div>
             <div class="image-actions">
-              <button class="action-btn-small delete-single" title="Remove this image" @click.stop="deleteImage(index)">
+              <button
+                class="action-btn-small delete-single"
+                title="Remove this image"
+                @click.stop="deleteImage(index)"
+              >
                 <el-icon>
                   <CloseBold />
                 </el-icon>
@@ -959,8 +963,15 @@ function setCurrentImage(index: number): void {
 
         <!-- 压缩结果展示区域 -->
         <div
-          v-if="currentImage && (currentImage.compressionResults.length > 0 || (!currentImage.isBrowserCompressing && !currentImage.isNodeCompressing && currentImage.compressionError))"
-          class="results-section">
+          v-if="
+            currentImage &&
+            (currentImage.compressionResults.length > 0 ||
+              (!currentImage.isBrowserCompressing &&
+                !currentImage.isNodeCompressing &&
+                currentImage.compressionError))
+          "
+          class="results-section"
+        >
           <div class="results-header">
             <h3 class="results-title">Compression Results for "{{ currentImage.file.name }}"</h3>
             <div class="results-stats">
@@ -969,40 +980,55 @@ function setCurrentImage(index: number): void {
           </div>
 
           <!-- 错误状态显示 -->
-          <div v-if="currentImage.compressionError && currentImage.compressionResults.length === 0"
-            class="error-message">
+          <div
+            v-if="currentImage.compressionError && currentImage.compressionResults.length === 0"
+            class="error-message"
+          >
             <div class="error-icon">⚠️</div>
             <div class="error-text">{{ currentImage.compressionError }}</div>
           </div>
 
           <!-- 压缩结果网格 -->
           <div v-if="currentImage.compressionResults.length > 0" class="results-grid">
-            <div v-for="result in currentImage.compressionResults" :key="result.tool" class="result-card"
-              :class="{ 'best-result': result.isBest }">
+            <div
+              v-for="result in currentImage.compressionResults"
+              :key="result.tool"
+              class="result-card"
+              :class="{ 'best-result': result.isBest }"
+            >
               <div class="result-preview">
-                <img :src="result.compressedUrl" :alt="`Compressed by ${result.tool}`" class="result-image" />
-                <div v-if="result.isBest" class="best-badge">
-                  👑 Best
-                </div>
+                <img
+                  :src="result.compressedUrl"
+                  :alt="`Compressed by ${result.tool}`"
+                  class="result-image"
+                />
+                <div v-if="result.isBest" class="best-badge">👑 Best</div>
               </div>
               <div class="result-info">
                 <div class="result-tool">{{ result.tool }}</div>
                 <div class="result-stats">
                   <span class="result-size">{{ formatFileSize(result.compressedSize) }}</span>
-                  <span class="result-ratio" :class="{ 'positive': result.compressionRatio > 0 }">
-                    {{ result.compressionRatio > 0 ? '-' : '+' }}{{ Math.abs(result.compressionRatio).toFixed(1) }}%
+                  <span class="result-ratio" :class="{ positive: result.compressionRatio > 0 }">
+                    {{ result.compressionRatio > 0 ? '-' : '+'
+                    }}{{ Math.abs(result.compressionRatio).toFixed(1) }}%
                   </span>
                 </div>
               </div>
               <div class="result-actions">
-                <button class="action-btn-small preview-btn" title="Preview comparison"
-                  @click="previewCompressionResult(currentImage, result)">
+                <button
+                  class="action-btn-small preview-btn"
+                  title="Preview comparison"
+                  @click="previewCompressionResult(currentImage, result)"
+                >
                   <el-icon>
                     <Picture />
                   </el-icon>
                 </button>
-                <button class="action-btn-small download-btn" title="Download this result"
-                  @click="downloadCompressionResult(currentImage, result)">
+                <button
+                  class="action-btn-small download-btn"
+                  title="Download this result"
+                  @click="downloadCompressionResult(currentImage, result)"
+                >
                   <el-icon>
                     <Download />
                   </el-icon>
@@ -1023,8 +1049,7 @@ function setCurrentImage(index: number): void {
   min-height: 100vh;
   height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   position: relative;
   overflow: hidden;
   /* 优化滚动性能 */
@@ -1150,9 +1175,7 @@ function setCurrentImage(index: number): void {
 .bg-circle {
   position: absolute;
   border-radius: 50%;
-  background: linear-gradient(45deg,
-      rgba(255, 255, 255, 0.1),
-      rgba(255, 255, 255, 0.05));
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
   animation: float 6s ease-in-out infinite;
 }
 
@@ -1181,7 +1204,6 @@ function setCurrentImage(index: number): void {
 }
 
 @keyframes float {
-
   0%,
   100% {
     transform: translateY(0px) rotate(0deg);
@@ -1203,9 +1225,7 @@ function setCurrentImage(index: number): void {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg,
-      rgba(102, 126, 234, 0.95),
-      rgba(118, 75, 162, 0.95));
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.95), rgba(118, 75, 162, 0.95));
   backdrop-filter: blur(10px);
   display: flex;
   justify-content: center;
@@ -1351,10 +1371,7 @@ function setCurrentImage(index: number): void {
 .toolbar-divider {
   width: 1px;
   height: 32px;
-  background: linear-gradient(to bottom,
-      transparent,
-      rgba(0, 0, 0, 0.1),
-      transparent);
+  background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.1), transparent);
   margin: 0 6px;
 }
 
@@ -1427,10 +1444,7 @@ function setCurrentImage(index: number): void {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg,
-      transparent,
-      rgba(255, 255, 255, 0.4),
-      transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
   transition: left 0.5s;
 }
 
@@ -1569,9 +1583,7 @@ function setCurrentImage(index: number): void {
   font-size: 11px;
   color: #16a34a;
   font-weight: 700;
-  background: linear-gradient(135deg,
-      rgba(34, 197, 94, 0.1),
-      rgba(34, 197, 94, 0.2));
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.2));
   padding: 4px 8px;
   border-radius: 12px;
   border: 1px solid rgba(34, 197, 94, 0.2);
@@ -1604,10 +1616,7 @@ function setCurrentImage(index: number): void {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg,
-      transparent,
-      rgba(255, 255, 255, 0.2),
-      transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
   transition: left 0.6s;
 }
 
@@ -1984,10 +1993,7 @@ function setCurrentImage(index: number): void {
   .toolbar-divider {
     width: 100%;
     height: 1px;
-    background: linear-gradient(to right,
-        transparent,
-        rgba(0, 0, 0, 0.1),
-        transparent);
+    background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.1), transparent);
     margin: 0;
   }
 

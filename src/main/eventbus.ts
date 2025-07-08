@@ -1,7 +1,6 @@
 import EventEmitter from 'events'
 
 export class EventBus extends EventEmitter {
-
   constructor() {
     super()
   }
@@ -19,7 +18,6 @@ export class EventBus extends EventEmitter {
    * @param args 事件参数
    */
   sendToRenderer(eventName: string, ...args: unknown[]): void {
-
     this.sendToMain(eventName, ...args)
   }
 

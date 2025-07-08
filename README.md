@@ -3,25 +3,30 @@
 一个基于 [browser-compress-image](https://github.com/awesome-compressor/browser-compress-image) 库构建的强大桌面多媒体文件压缩应用。使用 Electron + Vue 3 + TypeScript 打造，提供现代化的用户界面和高效的压缩算法。
 
 ![Cover](https://github.com/user-attachments/assets/61a702d6-e313-4b35-ba0c-c2f2f4779613)
+
 ## ✨ 特性
 
 🖼️ **多格式图片压缩**
+
 - 支持 JPEG、PNG、WebP、GIF 等主流图片格式
 - 智能压缩算法，最优质量与文件大小平衡
 - 保留图片 EXIF 信息（可选）
 
 🛠️ **多引擎压缩**
+
 - Browser Image Compression - 快速压缩，兼容性好
 - CompressorJS - 轻量级，配置灵活
 - Canvas - 原生浏览器 API，通用性强
 - Gifsicle - GIF 专用压缩引擎
 
 🎯 **智能优化**
+
 - 自动选择最佳压缩工具
 - 实时压缩效果预览
 - 批量文件处理支持
 
 💻 **桌面应用优势**
+
 - 本地处理，保护隐私安全
 - 无需网络连接
 - 系统集成，拖拽操作
@@ -29,7 +34,7 @@
 
 ## 📸 应用截图
 
-*即将添加应用界面截图*
+_即将添加应用界面截图_
 
 ## 🚀 快速开始
 
@@ -82,22 +87,22 @@ pnpm build:linux
 
 ### 压缩参数
 
-| 参数 | 范围 | 默认值 | 说明 |
-|------|------|--------|------|
-| 压缩质量 | 0.1 - 1.0 | 0.8 | 值越小文件越小，质量越低 |
-| 保留 EXIF | 布尔值 | false | 是否保留图片元数据信息 |
-| 输出格式 | JPEG/PNG/WebP | 原格式 | 压缩后的文件格式 |
+| 参数      | 范围          | 默认值 | 说明                     |
+| --------- | ------------- | ------ | ------------------------ |
+| 压缩质量  | 0.1 - 1.0     | 0.8    | 值越小文件越小，质量越低 |
+| 保留 EXIF | 布尔值        | false  | 是否保留图片元数据信息   |
+| 输出格式  | JPEG/PNG/WebP | 原格式 | 压缩后的文件格式         |
 
 ### 支持格式
 
 #### 输入格式
 
-| 格式 | 扩展名 | 压缩引擎 | EXIF 支持 |
-|------|--------|----------|-----------|
-| JPEG | .jpg, .jpeg | ✅ 多引擎 | ✅ |
-| PNG | .png | ✅ 多引擎 | ✅ |
-| WebP | .webp | ✅ Canvas | ❌ |
-| GIF | .gif | ✅ Gifsicle | ❌ |
+| 格式 | 扩展名      | 压缩引擎    | EXIF 支持 |
+| ---- | ----------- | ----------- | --------- |
+| JPEG | .jpg, .jpeg | ✅ 多引擎   | ✅        |
+| PNG  | .png        | ✅ 多引擎   | ✅        |
+| WebP | .webp       | ✅ Canvas   | ❌        |
+| GIF  | .gif        | ✅ Gifsicle | ❌        |
 
 #### 输出格式
 
@@ -109,17 +114,20 @@ pnpm build:linux
 ## 🔧 技术栈
 
 ### 核心框架
+
 - **Electron** - 跨平台桌面应用框架
 - **Vue 3** - 渐进式前端框架
 - **TypeScript** - 类型安全的 JavaScript
 - **Vite** - 现代化构建工具
 
 ### 压缩引擎
+
 - **browser-image-compression** - 主要图片压缩库
 - **compressorjs** - 轻量级压缩工具
 - **gifsicle-wasm-browser** - GIF 专用压缩
 
 ### UI 和样式
+
 - **UnoCSS** - 原子化 CSS 引擎
 - **Vue Router** - 单页面路由管理
 - **Composables** - Vue 3 组合式 API
@@ -132,11 +140,12 @@ pnpm build:linux
 - **PNG 图片**：平均压缩率 40-70%
 - **GIF 动图**：平均压缩率 30-50%
 
-*实际效果取决于图片内容、质量设置和原始文件大小*
+_实际效果取决于图片内容、质量设置和原始文件大小_
 
 ## 🛣️ 开发计划
 
 ### 当前版本 (v1.0)
+
 - ✅ 图片压缩核心功能
 - ✅ 多压缩引擎支持
 - ✅ 基础用户界面
@@ -175,12 +184,14 @@ MIT License © 2025 [awesome-compressor]
 ## 🙏 致谢
 
 ### 核心依赖
+
 - [browser-compress-image](https://github.com/awesome-compressor/browser-compress-image) - 图片压缩核心库
 - [Electron](https://electronjs.org/) - 跨平台桌面应用框架
 - [Vue 3](https://vuejs.org/) - 现代前端框架
 - [Vite](https://vitejs.dev/) - 快速构建工具
 
 ### 开发工具
+
 - [TypeScript](https://typescriptlang.org/) - 类型安全
 - [UnoCSS](https://unocss.dev/) - 原子化 CSS
 - [ESLint](https://eslint.org/) - 代码质量检查

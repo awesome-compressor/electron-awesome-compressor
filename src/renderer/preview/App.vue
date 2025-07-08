@@ -23,8 +23,9 @@
             <div class="compressed-info">
               <span class="label">Compressed ({{ previewData.compressedImage.tool }}):</span>
               <span class="size">{{ formatFileSize(previewData.compressedImage.size) }}</span>
-              <span class="ratio" :class="{ 'positive': previewData.compressedImage.ratio > 0 }">
-                {{ previewData.compressedImage.ratio > 0 ? '-' : '+' }}{{ Math.abs(previewData.compressedImage.ratio).toFixed(1) }}%
+              <span class="ratio" :class="{ positive: previewData.compressedImage.ratio > 0 }">
+                {{ previewData.compressedImage.ratio > 0 ? '-' : '+'
+                }}{{ Math.abs(previewData.compressedImage.ratio).toFixed(1) }}%
               </span>
             </div>
           </div>
@@ -177,13 +178,13 @@ async function downloadCompressed(): Promise<void> {
     ElMessage({
       message: `Downloaded: ${compressedFileName}`,
       type: 'success',
-      duration: 2000,
+      duration: 2000
     })
   } catch (error) {
     console.error('Download failed:', error)
     ElMessage({
       message: 'Download failed. Please try again.',
-      type: 'error',
+      type: 'error'
     })
   }
 }

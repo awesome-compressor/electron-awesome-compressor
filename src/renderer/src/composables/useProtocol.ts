@@ -60,7 +60,7 @@ export function useProtocol(): {
    * Generate eacompressor:// protocol URL
    */
   const generateProtocolUrl = (action: string, ...params: string[]): string => {
-    const encodedParams = params.map(param => encodeURIComponent(param))
+    const encodedParams = params.map((param) => encodeURIComponent(param))
     return `eacompressor://${action}/${encodedParams.join('/')}`
   }
 
@@ -88,7 +88,10 @@ export function useProtocol(): {
   /**
    * Listen for protocol events from main process
    */
-  const onProtocolEvent = (event: string, callback: (data: Record<string, unknown>) => void): void => {
+  const onProtocolEvent = (
+    event: string,
+    callback: (data: Record<string, unknown>) => void
+  ): void => {
     window.electron.ipcRenderer.on(event, (_event, data) => {
       callback(data)
     })
@@ -102,6 +105,6 @@ export function useProtocol(): {
     generateCompressUrl,
     generateOpenUrl,
     generateSettingsUrl,
-    onProtocolEvent,
+    onProtocolEvent
   }
 }

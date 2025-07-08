@@ -79,7 +79,13 @@ export class NodeCompressPresenter {
   /**
    * Store file and return unique ID
    */
-  private storeFile(filePath: string, filename: string, tool: string, originalSize: number, compressedSize: number): string {
+  private storeFile(
+    filePath: string,
+    filename: string,
+    tool: string,
+    originalSize: number,
+    compressedSize: number
+  ): string {
     const fileId = this.generateFileId(filename, tool)
 
     const entry: StoredFileEntry = {
@@ -164,7 +170,13 @@ export class NodeCompressPresenter {
         await fs.writeFile(outputPath, compressedBuffer)
 
         // Store file and get ID
-        const fileId = this.storeFile(outputPath, filename, stats.bestTool, imageBuffer.length, compressedBuffer.length)
+        const fileId = this.storeFile(
+          outputPath,
+          filename,
+          stats.bestTool,
+          imageBuffer.length,
+          compressedBuffer.length
+        )
         bestFileId = fileId
 
         allResults.push({
@@ -184,10 +196,11 @@ export class NodeCompressPresenter {
         totalDuration: stats.totalDuration,
         allResults
       }
-
     } catch (error) {
       console.error('Node compression error:', error)
-      throw new Error(`Node compression failed: ${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(
+        `Node compression failed: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
   }
 
@@ -210,11 +223,13 @@ export class NodeCompressPresenter {
       return await this.compressImage(imageBuffer, filename, options)
     } catch (error) {
       console.error('Error reading input file:', error)
-      throw new Error(`Failed to read input file: ${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(
+        `Failed to read input file: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
   }
 
-    /**
+  /**
    * Compress image from Uint8Array (for IPC compatibility)
    */
   async compressImageFromBytes(
@@ -229,7 +244,12 @@ export class NodeCompressPresenter {
   ): Promise<NodeCompressionStats> {
     try {
       console.log(`Converting bytes to Buffer for: ${filename}`)
-      console.log('Image bytes type:', typeof imageBytes, 'constructor:', imageBytes.constructor.name)
+      console.log(
+        'Image bytes type:',
+        typeof imageBytes,
+        'constructor:',
+        imageBytes.constructor.name
+      )
 
       let imageBuffer: Buffer
 
@@ -257,7 +277,9 @@ export class NodeCompressPresenter {
       return await this.compressImage(imageBuffer, filename, options)
     } catch (error) {
       console.error('Error converting bytes to buffer:', error)
-      throw new Error(`Failed to process image bytes: ${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(
+        `Failed to process image bytes: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
   }
 
@@ -282,7 +304,7 @@ export class NodeCompressPresenter {
    */
   async cleanupTempFiles(olderThanHours: number = 24): Promise<void> {
     try {
-      const cutoffTime = Date.now() - (olderThanHours * 60 * 60 * 1000)
+      const cutoffTime = Date.now() - olderThanHours * 60 * 60 * 1000
       const expiredIds: string[] = []
 
       // Clean up memory storage and collect expired file IDs

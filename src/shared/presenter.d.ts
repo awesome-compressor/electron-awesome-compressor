@@ -51,7 +51,13 @@ export interface IWindowPresenter {
 export interface IProtocolPresenter {
   init(): Promise<void>
   cleanup(): Promise<void>
-  registerProtocol(scheme: string, handler: (request: Electron.ProtocolRequest, callback: (response: string | Electron.ProtocolResponse) => void) => void): void
+  registerProtocol(
+    scheme: string,
+    handler: (
+      request: Electron.ProtocolRequest,
+      callback: (response: string | Electron.ProtocolResponse) => void
+    ) => void
+  ): void
   unregisterProtocol(scheme: string): void
   getRegisteredProtocols(): string[]
   openExternalLink(url: string): Promise<{ success: boolean; error?: string }>
