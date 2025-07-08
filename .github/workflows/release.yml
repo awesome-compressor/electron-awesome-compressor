@@ -30,13 +30,13 @@ jobs:
       - name: Get version number
         id: get_version
         run: |
-          VERSION_FILE=$(find artifacts/electron-awesome-compressor-linux-x64 -name "electron-awesome-compressor-*.tar.gz" | head -n 1)
+          VERSION_FILE=$(find artifacts/electron-awesome-compressor-linux-x64 -name "electron-awesome-compressor-*.AppImage" | head -n 1)
           if [ -n "$VERSION_FILE" ]; then
             VERSION=$(echo $VERSION_FILE | grep -o 'electron-awesome-compressor-[0-9]\+\.[0-9]\+\.[0-9]\+' | sed 's/electron-awesome-compressor-//')
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "Found version: $VERSION"
           else
-            echo "Error: electron-awesome-compressor tar.gz file not found"
+            echo "Error: electron-awesome-compressor AppImage file not found"
             exit 1
           fi
 
