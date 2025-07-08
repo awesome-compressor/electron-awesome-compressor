@@ -47,14 +47,24 @@ export class ProtocolPresenter implements IProtocolPresenter {
     protocol.registerFileProtocol('eacompressor-file', (request, callback) => {
       try {
         console.log(`[Protocol] eacompressor-file request: ${request.url}`)
-        const fileId = request.url.replace('eacompressor-file://', '')
+
+        // Parse the URL to extract file ID from query parameter
+        const url = new URL(request.url)
+        const fileId = url.searchParams.get('id')
+
+        if (!fileId) {
+          console.warn(`[Protocol] No file ID found in URL: ${request.url}`)
+          callback({ statusCode: 400, data: 'Missing file ID parameter' })
+          return
+        }
+
         console.log(`[Protocol] Extracted file ID: ${fileId}`)
 
         // Get file path from nodeCompressPresenter using the file ID
         this.resolveFileById(fileId, callback)
       } catch (error) {
         console.error('[Protocol] Error processing file ID:', error)
-        callback({ statusCode: 400, data: 'Invalid file ID' })
+        callback({ statusCode: 400, data: 'Invalid file ID format' })
       }
     })
 
