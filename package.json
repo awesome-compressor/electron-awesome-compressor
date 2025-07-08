@@ -32,11 +32,12 @@
     "@awesome-compressor/node-image-compression": "^0.0.2",
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "jimp": "^1.6.0"
   },
   "devDependencies": {
-    "@awesome-compressor/browser-compress-image": "^0.0.2",
     "@antfu/eslint-config": "^4.16.1",
+    "@awesome-compressor/browser-compress-image": "^0.0.2",
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.0.0",
     "@electron-toolkit/tsconfig": "^1.0.1",
