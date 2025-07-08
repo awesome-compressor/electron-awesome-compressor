@@ -383,49 +383,62 @@ async function compressImage(item: ImageItem): Promise<void> {
   item.compressionError = undefined
   // 不清空已有结果，保留Node压缩结果
 
-    try {
-    // 临时模拟多种压缩算法的结果
-    // TODO: 替换为 compressWithMultipleTools 当API可用时
-    const tools = ['browser-image-compression', 'compressorjs', 'canvas']
-
-    // 保留现有的 node 压缩结果（用于日志记录）
+  try {
+            // 保留现有的 node 压缩结果（用于日志记录）
     const existingNodeResults = item.compressionResults.filter(r => r.tool.startsWith('node-'))
     if (existingNodeResults.length > 0) {
       console.log('Preserving existing node results:', existingNodeResults.length)
     }
 
-    for (const tool of tools) {
-      // 为每个工具模拟不同的压缩质量和结果
-      let toolQuality = item.quality / 100
-      if (tool === 'compressorjs') toolQuality *= 0.95 // 稍微更激进的压缩
-      if (tool === 'canvas') toolQuality *= 1.05 // 稍微保守的压缩
+    // 使用 @awesome-compressor/browser-compress-image 获取所有工具的压缩结果
+    const allResults = await compress(item.file, {
+      quality: item.quality / 100,
+      preserveExif: false,
+      returnAllResults: true, // 返回所有工具的结果
+      type: 'blob',
+    })
 
-      const compressedBlob = await compress(item.file, {
-        quality: Math.min(1, Math.max(0.1, toolQuality)),
-        type: 'blob',
-      })
+    console.log('Browser compression completed:')
+    console.log('最优工具:', allResults.bestTool)
+    console.log('最优结果:', allResults.bestResult)
+    console.log('所有结果:')
+    allResults.allResults.forEach((result) => {
+      console.log(
+        `${result.tool}: ${result.compressedSize} bytes (${result.compressionRatio.toFixed(1)}% reduction)`,
+      )
+    })
 
-      if (compressedBlob) {
-        const compressedUrl = URL.createObjectURL(compressedBlob)
-        const compressionRatio = ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+                // 处理所有压缩结果
+    if (allResults.allResults && allResults.allResults.length > 0) {
+      for (const result of allResults.allResults) {
+        if (result && result instanceof Blob) {
+          // result 是标准 Blob 对象，但带有额外属性
+          const tool = (result as any).tool || 'unknown'
+          const compressedSize = result.size
+          const compressionRatio = ((item.originalSize - result.size) / item.originalSize) * 100
 
-        const newResult: CompressionResult = {
-          tool,
-          compressedUrl,
-          compressedSize: compressedBlob.size,
-          compressionRatio,
-          blob: compressedBlob,
-          isBest: false // 将在下面设置
+          const compressedUrl = URL.createObjectURL(result)
+
+          const newResult: CompressionResult = {
+            tool,
+            compressedUrl,
+            compressedSize,
+            compressionRatio,
+            blob: result,
+            isBest: false // 将在下面设置
+          }
+
+          // 移除该工具的旧结果并添加新结果
+          item.compressionResults = item.compressionResults.filter(r => r.tool !== tool)
+          item.compressionResults.push(newResult)
+
+          // 每次有新结果就立即重新排序并更新显示
+          sortCompressionResults(item)
+
+          console.log(`${tool} compression completed: ${compressedSize} bytes (${compressionRatio.toFixed(1)}% reduction)`)
+        } else {
+          console.warn('Invalid result object:', result)
         }
-
-        // 移除该工具的旧结果并添加新结果
-        item.compressionResults = item.compressionResults.filter(r => r.tool !== tool)
-        item.compressionResults.push(newResult)
-
-        // 每次有新结果就立即重新排序并更新显示
-        sortCompressionResults(item)
-
-        console.log(`${tool} compression completed:`, newResult)
       }
     }
 

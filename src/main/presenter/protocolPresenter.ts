@@ -25,9 +25,9 @@ export class ProtocolPresenter implements IProtocolPresenter {
     this.setAsDefaultProtocolClient()
   }
 
-    /**
-   * Register custom protocol schemes
-   */
+  /**
+ * Register custom protocol schemes
+ */
   private registerCustomProtocols(): void {
     // Register eacompressor:// protocol
     protocol.registerStringProtocol('eacompressor', (request, callback) => {
@@ -134,39 +134,24 @@ export class ProtocolPresenter implements IProtocolPresenter {
     callback: (response: string | Electron.ProtocolResponse) => void
   ): void {
     try {
-      // Import presenter to access nodeCompressPresenter
-      import('./index').then(({ presenter }) => {
-        const tempDir = presenter.nodeCompressPresenter.getTempDir()
+      // Check if file exists
+      if (!existsSync(filePath)) {
+        console.warn(`File not found: ${filePath}`)
+        callback({ statusCode: 404, data: 'File not found' })
+        return
+      }
 
-        // Check if the file path is within the temp directory for security
-        if (!filePath.startsWith(tempDir)) {
-          console.warn(`Access denied to file outside temp directory: ${filePath}`)
-          callback({ statusCode: 403, data: 'Access denied' })
-          return
-        }
-
-        // Check if file exists
-        if (!existsSync(filePath)) {
-          console.warn(`File not found: ${filePath}`)
-          callback({ statusCode: 404, data: 'File not found' })
-          return
-        }
-
-        console.log(`Serving compressed file: ${filePath}`)
-        callback({ path: filePath })
-      }).catch(error => {
-        console.error('Error accessing presenter:', error)
-        callback({ statusCode: 500, data: 'Internal error' })
-      })
+      console.log(`Serving compressed file: ${filePath}`)
+      callback({ path: filePath })
     } catch (error) {
       console.error('Error validating file path:', error)
       callback({ statusCode: 500, data: 'Internal error' })
     }
   }
 
-    /**
-   * Setup external link handlers
-   */
+  /**
+ * Setup external link handlers
+ */
   private setupExternalLinkHandlers(): void {
     // External link handling is now done through presenter methods
     // No direct IPC handlers needed
