@@ -11,24 +11,35 @@ import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
 import { download } from 'lazy-js-utils'
 import { computed, h, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { compress } from '@simon_he/browser-compress-image'
+import { compress } from '@awesome-compressor/browser-compress-image'
 import 'img-comparison-slider/dist/styles.css'
 
 // 导入 img-comparison-slider
 import('img-comparison-slider')
+
+// 检测是否为 macOS
+const isMacOS = ref(false)
 
 // 单个图片的状态接口
 interface ImageItem {
   id: string
   file: File
   originalUrl: string
-  compressedUrl?: string
   originalSize: number
-  compressedSize?: number
-  compressionRatio?: number
+  quality: number // 压缩质量设置
   isCompressing: boolean
+  compressionResults: CompressionResult[]
   compressionError?: string
-  quality: number // 每张图片独立的质量设置
+}
+
+// 压缩结果接口
+interface CompressionResult {
+  tool: string
+  compressedUrl: string
+  compressedSize: number
+  compressionRatio: number
+  blob: Blob
+  isBest: boolean
 }
 
 // 响应式状态
@@ -50,7 +61,10 @@ const totalOriginalSize = computed(() =>
   imageItems.value.reduce((sum, item) => sum + item.originalSize, 0),
 )
 const totalCompressedSize = computed(() =>
-  imageItems.value.reduce((sum, item) => sum + (item.compressedSize || 0), 0),
+  imageItems.value.reduce((sum, item) => {
+    const bestResult = item.compressionResults.find(r => r.isBest)
+    return sum + (bestResult?.compressedSize || 0)
+  }, 0),
 )
 const totalCompressionRatio = computed(() => {
   if (totalOriginalSize.value === 0) return 0
@@ -63,7 +77,7 @@ const totalCompressionRatio = computed(() => {
 const compressedCount = computed(
   () =>
     imageItems.value.filter(
-      (item) => item.compressedUrl && !item.compressionError,
+      (item) => item.compressionResults.length > 0 && !item.compressionError,
     ).length,
 )
 const allCompressed = computed(
@@ -72,8 +86,10 @@ const allCompressed = computed(
     compressedCount.value === imageItems.value.length,
 )
 
-// 注册事件监听器
+// 检测操作系统
 onMounted(() => {
+  isMacOS.value = navigator.userAgent.includes('Mac')
+
   fileRef.value!.addEventListener('change', handleFileInputChange)
 
   // 添加全局拖拽事件监听
@@ -93,9 +109,9 @@ onUnmounted(() => {
   // 清理对象URL
   imageItems.value.forEach((item) => {
     URL.revokeObjectURL(item.originalUrl)
-    if (item.compressedUrl) {
-      URL.revokeObjectURL(item.compressedUrl)
-    }
+    item.compressionResults.forEach((result) => {
+      URL.revokeObjectURL(result.compressedUrl)
+    })
   })
 })
 
@@ -341,6 +357,7 @@ async function addNewImages(files: File[]): Promise<void> {
     originalSize: file.size,
     isCompressing: false,
     quality: 60, // 默认质量
+    compressionResults: [],
   }))
 
   imageItems.value.push(...newItems)
@@ -355,29 +372,52 @@ async function compressImage(item: ImageItem): Promise<void> {
 
   item.isCompressing = true
   item.compressionError = undefined
+  item.compressionResults = []
 
-  try {
-    const compressedBlob = await compress(item.file, {
-      quality: item.quality / 100, // 使用图片自己的质量设置
-      type: 'blob',
-    })
+    try {
+    // 临时模拟多种压缩算法的结果
+    // TODO: 替换为 compressWithMultipleTools 当API可用时
+    const tools = ['browser-image-compression', 'compressorjs', 'canvas']
+    const compressionResults: CompressionResult[] = []
 
-    if (!compressedBlob) {
-      ElMessage({
-        message: 'size is too large',
-        type: 'error',
+    for (const tool of tools) {
+      // 为每个工具模拟不同的压缩质量和结果
+      let toolQuality = item.quality / 100
+      if (tool === 'compressorjs') toolQuality *= 0.95 // 稍微更激进的压缩
+      if (tool === 'canvas') toolQuality *= 1.05 // 稍微保守的压缩
+
+      const compressedBlob = await compress(item.file, {
+        quality: Math.min(1, Math.max(0.1, toolQuality)),
+        type: 'blob',
       })
-      return
+
+      if (compressedBlob) {
+        const compressedUrl = URL.createObjectURL(compressedBlob)
+        const compressionRatio = ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+
+        compressionResults.push({
+          tool,
+          compressedUrl,
+          compressedSize: compressedBlob.size,
+          compressionRatio,
+          blob: compressedBlob,
+          isBest: false // 将在下面设置
+        })
+      }
     }
 
-    if (item.compressedUrl) {
-      URL.revokeObjectURL(item.compressedUrl)
+    // 找到压缩比最好的结果
+    if (compressionResults.length > 0) {
+      const bestResult = compressionResults.reduce((best, current) =>
+        current.compressionRatio > best.compressionRatio ? current : best
+      )
+      bestResult.isBest = true
+
+      console.log('Best compression tool:', bestResult.tool)
+      console.log('All results:', compressionResults)
     }
 
-    item.compressedUrl = URL.createObjectURL(compressedBlob)
-    item.compressedSize = compressedBlob.size
-    item.compressionRatio =
-      ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+    item.compressionResults = compressionResults
 
     // 为当前图片优化渲染性能
     nextTick(() => {
@@ -414,60 +454,19 @@ async function handleImageQualityChange(item: ImageItem, newQuality: number): Pr
   await compressImage(item)
 }
 
-// 优化图片渲染性能，减少滚动时的模糊
+// 优化图片渲染性能
 function optimizeImageRendering(): void {
-  console.log('开始优化图片渲染')
-
-  // 等待DOM更新
-  setTimeout(() => {
-    const images = document.querySelectorAll(
-      '.comparison-image-fullscreen, img-comparison-slider img',
-    )
-    console.log('找到图片数量:', images.length)
-
-    images.forEach((img, index) => {
-      if (img instanceof HTMLImageElement) {
-        console.log(`优化第${index + 1}张图片:`, img.src)
-        // 强制硬件加速和高质量渲染
-        img.style.transform = 'translateZ(0)'
-        img.style.backfaceVisibility = 'hidden'
-        img.style.imageRendering = 'crisp-edges'
-        img.style.webkitBackfaceVisibility = 'hidden'
-        // 立即设置正确的显示状态，防止暗到亮的闪烁
-        img.style.opacity = '1'
-        img.style.visibility = 'visible'
-        img.style.transition = 'none'
-        img.style.animation = 'none'
-        img.style.filter = 'none'
-        // 强制重绘以确保立即生效
-        // img.offsetHeight
-      }
-    })
-
-    // 同时优化 img-comparison-slider 组件本身
-    const sliders = document.querySelectorAll('img-comparison-slider')
-    console.log('找到slider数量:', sliders.length)
-
-    sliders.forEach((slider, index) => {
-      if (slider instanceof HTMLElement) {
-        console.log(`优化第${index + 1}个slider`)
-        slider.style.opacity = '1'
-        slider.style.visibility = 'visible'
-        slider.style.transition = 'none'
-        // 强制重绘
-        // slider.offsetHeight
-      }
-    })
-  }, 100)
+  console.log('Optimizing image rendering')
+  // 实现图片渲染优化逻辑
 }
 
 // 删除单个图片
 function deleteImage(index: number): void {
   const item = imageItems.value[index]
   URL.revokeObjectURL(item.originalUrl)
-  if (item.compressedUrl) {
-    URL.revokeObjectURL(item.compressedUrl)
-  }
+  item.compressionResults.forEach((result) => {
+    URL.revokeObjectURL(result.compressedUrl)
+  })
 
   imageItems.value.splice(index, 1)
 
@@ -481,9 +480,9 @@ function deleteImage(index: number): void {
 function clearAllImages(): void {
   imageItems.value.forEach((item) => {
     URL.revokeObjectURL(item.originalUrl)
-    if (item.compressedUrl) {
-      URL.revokeObjectURL(item.compressedUrl)
-    }
+    item.compressionResults.forEach((result) => {
+      URL.revokeObjectURL(result.compressedUrl)
+    })
   })
 
   imageItems.value = []
@@ -495,10 +494,8 @@ function uploadImages(): void {
   document.getElementById('file')?.click()
 }
 
-// 下载单个图片
-async function downloadImage(item: ImageItem): Promise<void> {
-  if (!item.compressedUrl) return
-
+// 下载单个压缩结果
+async function downloadCompressionResult(item: ImageItem, result: CompressionResult): Promise<void> {
   try {
     const originalName = item.file.name
     const lastDotIndex = originalName.lastIndexOf('.')
@@ -506,9 +503,9 @@ async function downloadImage(item: ImageItem): Promise<void> {
       lastDotIndex > 0 ? originalName.substring(0, lastDotIndex) : originalName
     const extension =
       lastDotIndex > 0 ? originalName.substring(lastDotIndex) : ''
-    const compressedFileName = `${nameWithoutExt}_compressed${extension}`
+    const compressedFileName = `${nameWithoutExt}_${result.tool}${extension}`
 
-    download(item.compressedUrl, compressedFileName)
+    download(result.compressedUrl, compressedFileName)
 
     ElMessage({
       message: `Downloaded: ${compressedFileName}`,
@@ -524,16 +521,45 @@ async function downloadImage(item: ImageItem): Promise<void> {
   }
 }
 
-// 批量下载所有图片
+// 预览压缩结果对比
+async function previewCompressionResult(item: ImageItem, result: CompressionResult): Promise<void> {
+  try {
+    // 通过 IPC 调用 windowPresenter 创建预览窗口
+    const previewData = {
+      originalImage: {
+        url: item.originalUrl,
+        name: item.file.name,
+        size: item.originalSize
+      },
+      compressedImage: {
+        url: result.compressedUrl,
+        tool: result.tool,
+        size: result.compressedSize,
+        ratio: result.compressionRatio
+      }
+    }
+
+    // 调用 presenter 方法
+    await window.electron.ipcRenderer.invoke('presenter:call', 'windowPresenter', 'previewComparison', previewData)
+  } catch (error) {
+    console.error('Failed to open preview:', error)
+    ElMessage({
+      message: 'Failed to open preview window',
+      type: 'error'
+    })
+  }
+}
+
+// 批量下载所有压缩结果
 async function downloadAllImages(): Promise<void> {
   if (downloading.value) return
 
   const downloadableItems = imageItems.value.filter(
-    (item) => item.compressedUrl && !item.compressionError,
+    (item) => item.compressionResults.length > 0 && !item.compressionError,
   )
   if (downloadableItems.length === 0) {
     ElMessage({
-      message: 'No compressed images to download',
+      message: 'No compressed results to download',
       type: 'warning',
     })
     return
@@ -546,9 +572,11 @@ async function downloadAllImages(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 300))
 
     for (const item of downloadableItems) {
-      await downloadImage(item)
-      // 添加小延迟避免浏览器下载限制
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      for (const result of item.compressionResults) {
+        await downloadCompressionResult(item, result)
+        // 添加小延迟避免浏览器下载限制
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
     }
 
     ElMessage({
@@ -556,7 +584,7 @@ async function downloadAllImages(): Promise<void> {
         h(
           'div',
           { style: 'color: #16a34a; font-weight: 500; margin-bottom: 4px;' },
-          `Successfully downloaded ${downloadableItems.length} images!`,
+          `Successfully downloaded ${downloadableItems.length} results!`,
         ),
         h(
           'div',
@@ -598,6 +626,11 @@ function setCurrentImage(index: number): void  {
 
 <template>
   <div class="app-container" :class="{ 'drag-over': isDragOver }">
+    <!-- macOS 透明标题栏区域 -->
+    <div v-if="isMacOS" class="macos-titlebar">
+      <div class="titlebar-drag-region" />
+    </div>
+
     <!-- 拖拽覆盖层 -->
     <div v-show="isDragOver" class="drag-overlay">
       <div class="drag-message">
@@ -631,7 +664,7 @@ function setCurrentImage(index: number): void  {
     </div>
 
     <GitForkVue
-      link="https://github.com/Simon-He95/browser-compress-image"
+      link="https://github.com/awesome-compressor/electron-awesome-compressor"
       position="right"
       type="corners"
       content="Star on GitHub"
@@ -639,12 +672,11 @@ function setCurrentImage(index: number): void  {
     />
 
     <!-- Header -->
-    <header class="header-section">
+    <header class="header-section" :class="{ 'macos-header': isMacOS }">
       <div class="title-container">
         <vivid-typing content="Browser Compress Image" class="main-title" />
         <p class="subtitle">
-          Compress your images with ease, right in your browser • Support batch
-          processing
+          Compress your images with multiple algorithms • Find the best compression
         </p>
       </div>
     </header>
@@ -730,7 +762,7 @@ function setCurrentImage(index: number): void  {
             class="download-btn-new"
             :class="[{ downloading }]"
             :disabled="downloading"
-            title="Download All Compressed Images"
+            title="Download All Best Results"
             @click="downloadAllImages"
           >
             <div class="download-btn-content">
@@ -754,7 +786,7 @@ function setCurrentImage(index: number): void  {
         </div>
       </div>
 
-      <!-- 图片列表和预览区域 -->
+      <!-- 图片列表和结果区域 -->
       <section v-if="hasImages" class="images-section">
         <!-- 图片列表缩略图 -->
         <div class="images-grid">
@@ -788,11 +820,8 @@ function setCurrentImage(index: number): void  {
                 <span class="original-size">{{
                   formatFileSize(item.originalSize)
                 }}</span>
-                <span v-if="item.compressedSize" class="compressed-size">
-                  → {{ formatFileSize(item.compressedSize) }}
-                </span>
-                <span v-if="item.compressionRatio" class="ratio">
-                  (-{{ item.compressionRatio.toFixed(1) }}%)
+                <span v-if="item.compressionResults.length > 0" class="best-result">
+                  Best: {{ item.compressionResults.find(r => r.isBest)?.tool }}
                 </span>
               </div>
               <!-- 独立的质量控制 -->
@@ -813,16 +842,6 @@ function setCurrentImage(index: number): void  {
             </div>
             <div class="image-actions">
               <button
-                v-if="item.compressedUrl && !item.compressionError"
-                class="action-btn-small download-single"
-                title="Download this image"
-                @click.stop="downloadImage(item)"
-              >
-                <el-icon>
-                  <Download />
-                </el-icon>
-              </button>
-              <button
                 class="action-btn-small delete-single"
                 title="Remove this image"
                 @click.stop="deleteImage(index)"
@@ -835,129 +854,60 @@ function setCurrentImage(index: number): void  {
           </div>
         </div>
 
-        <!-- 全屏图片对比预览 -->
-        <div v-if="currentImage" class="fullscreen-comparison">
-          <div class="comparison-container-fullscreen">
-            <!-- 调试信息 -->
-            <div
-              v-if="!currentImage.originalUrl || !currentImage.compressedUrl"
-              class="debug-info"
-            >
-              <p>调试信息:</p>
-              <p>
-                originalUrl:
-                {{ currentImage.originalUrl ? '已加载' : '未加载' }}
-              </p>
-              <p>
-                compressedUrl:
-                {{ currentImage.compressedUrl ? '已加载' : '未加载' }}
-              </p>
-              <p>
-                originalSize: {{ formatFileSize(currentImage.originalSize) }}
-              </p>
-              <p>
-                compressedSize:
-                {{
-                  currentImage.compressedSize
-                    ? formatFileSize(currentImage.compressedSize)
-                    : '未压缩'
-                }}
-              </p>
-              <p>isCompressing: {{ currentImage.isCompressing }}</p>
-              <p>
-                compressionError:
-                {{ currentImage.compressionError || '无错误' }}
-              </p>
+        <!-- 压缩结果展示区域 -->
+        <div v-if="currentImage && currentImage.compressionResults.length > 0" class="results-section">
+          <div class="results-header">
+            <h3 class="results-title">Compression Results for "{{ currentImage.file.name }}"</h3>
+            <div class="results-stats">
+              Original: {{ formatFileSize(currentImage.originalSize) }}
             </div>
+          </div>
 
-            <!-- 主要的图片对比组件 -->
-            <img-comparison-slider
-              v-if="currentImage.originalUrl && currentImage.compressedUrl"
-              class="comparison-slider-fullscreen"
-              value="50"
-            >
-              <!-- eslint-disable -->
-              <img
-                slot="first"
-                :src="currentImage.originalUrl"
-                alt="Original Image"
-                class="comparison-image-fullscreen"
-                loading="eager"
-                decoding="sync"
-                style="
-                  opacity: 1;
-                  visibility: visible;
-                  transition: none;
-                  animation: none;
-                  filter: none;
-                "
-                @load="console.log('原图加载完成')"
-                @error="console.error('原图加载失败')"
-              />
-              <img
-                slot="second"
-                :src="currentImage.compressedUrl"
-                alt="Compressed Image"
-                class="comparison-image-fullscreen"
-                loading="eager"
-                decoding="sync"
-                style="
-                  opacity: 1;
-                  visibility: visible;
-                  transition: none;
-                  animation: none;
-                  filter: none;
-                "
-                @load="console.log('压缩图加载完成')"
-                @error="console.error('压缩图加载失败')"
-              />
-              <!-- eslint-enable -->
-            </img-comparison-slider>
-
-            <!-- 仅显示原图（压缩中或出错时） -->
-            <div
-              v-else-if="currentImage.originalUrl"
-              class="single-image-preview"
-            >
-              <img
-                :src="currentImage.originalUrl"
-                :alt="currentImage.file.name"
-                class="single-image"
-              />
-              <div v-if="currentImage.isCompressing" class="preview-overlay">
-                <el-icon class="is-loading" size="30px">
-                  <Loading />
-                </el-icon>
-                <div class="overlay-text">Compressing...</div>
-              </div>
-              <div
-                v-if="currentImage.compressionError"
-                class="preview-overlay error"
-              >
-                <div class="overlay-text">Compression Error</div>
-                <div class="overlay-subtext">
-                  {{ currentImage.compressionError }}
+          <div class="results-grid">
+                       <div
+             v-for="result in currentImage.compressionResults"
+             :key="result.tool"
+             class="result-card"
+             :class="{ 'best-result': result.isBest }"
+           >
+              <div class="result-preview">
+                <img
+                  :src="result.compressedUrl"
+                  :alt="`Compressed by ${result.tool}`"
+                  class="result-image"
+                />
+                <div v-if="result.isBest" class="best-badge">
+                  👑 Best
                 </div>
               </div>
-            </div>
-
-            <!-- 图片信息覆盖层 -->
-            <div class="image-overlay-info">
-              <div class="image-title">
-                {{ currentImage.file.name }}
+              <div class="result-info">
+                <div class="result-tool">{{ result.tool }}</div>
+                <div class="result-stats">
+                  <span class="result-size">{{ formatFileSize(result.compressedSize) }}</span>
+                  <span class="result-ratio" :class="{ 'positive': result.compressionRatio > 0 }">
+                    {{ result.compressionRatio > 0 ? '-' : '+' }}{{ Math.abs(result.compressionRatio).toFixed(1) }}%
+                  </span>
+                </div>
               </div>
-              <div class="image-details">
-                <span
-                  >{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span
+              <div class="result-actions">
+                <button
+                  class="action-btn-small preview-btn"
+                  title="Preview comparison"
+                  @click="previewCompressionResult(currentImage, result)"
                 >
-                <span>Quality: {{ currentImage.quality }}%</span>
-                <span>{{ formatFileSize(currentImage.originalSize) }}</span>
-                <span v-if="currentImage.compressedSize">
-                  → {{ formatFileSize(currentImage.compressedSize) }}
-                </span>
-                <span v-if="currentImage.compressionRatio" class="savings">
-                  (-{{ currentImage.compressionRatio.toFixed(1) }}%)
-                </span>
+                  <el-icon>
+                    <Picture />
+                  </el-icon>
+                </button>
+                <button
+                  class="action-btn-small download-btn"
+                  title="Download this result"
+                  @click="downloadCompressionResult(currentImage, result)"
+                >
+                  <el-icon>
+                    <Download />
+                  </el-icon>
+                </button>
               </div>
             </div>
           </div>
@@ -995,6 +945,35 @@ function setCurrentImage(index: number): void  {
 
 .app-container.drag-over {
   background: linear-gradient(135deg, #667eea 20%, #764ba2 80%);
+}
+
+/* macOS 透明标题栏 */
+.macos-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: transparent;
+  z-index: 9999;
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.titlebar-drag-region {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+}
+
+/* macOS 标题调整 */
+.macos-header {
+  padding-top: 40px; /* 为标题栏留空间 */
+}
+
+.macos-header .title-container {
+  -webkit-app-region: drag;
 }
 
 /* 拖拽覆盖层 */
@@ -1158,7 +1137,7 @@ function setCurrentImage(index: number): void  {
   position: relative;
   z-index: 1;
   text-align: center;
-  padding: 60px 20px 40px;
+  padding: 40px 20px 20px;
   touch-action: none;
 }
 
@@ -1169,13 +1148,13 @@ function setCurrentImage(index: number): void  {
 }
 
 .main-title {
-  font-size: 3.5rem;
-  font-weight: 800;
+  font-size: 2.8rem;
+  font-weight: 700;
   background: linear-gradient(45deg, #fff, #e0e7ff);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
@@ -1589,57 +1568,186 @@ function setCurrentImage(index: number): void  {
   font-weight: 600;
 }
 
-/* 全屏图片对比区域 */
-.fullscreen-comparison {
+/* 压缩结果展示区域 */
+.results-section {
   flex: 1;
-  min-height: 500px;
   padding: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.results-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.results-stats {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.result-card {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.result-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.result-card.best-result {
+  border-color: #667eea;
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+}
+
+.best-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.result-preview {
+  position: relative;
+  width: 100%;
+  height: 120px;
+  overflow: hidden;
+}
+
+.result-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.result-card:hover .result-preview img {
+  transform: scale(1.05);
+}
+
+.result-info {
+  padding: 8px;
+  background: white;
+}
+
+.result-tool {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+.result-stats {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.result-size {
+  font-weight: 500;
+}
+
+.result-ratio {
+  color: #16a34a;
+  font-weight: 700;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+}
+
+.result-ratio.positive {
+  color: #4ade80;
+}
+
+.result-actions {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  background: #f8fafc;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.action-btn-small {
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: visible;
+  font-size: 12px;
+  flex: 1;
 }
 
-.comparison-container-fullscreen {
-  width: 100%;
-  max-width: 95vw;
-  min-height: 450px;
-  height: 450px;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  position: relative;
+.action-btn-small:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.comparison-slider-fullscreen {
-  width: 100%;
-  height: 100%;
-  --divider-width: 3px;
-  --divider-color: rgba(255, 255, 255, 0.8);
-  --default-handle-width: 48px;
-  --default-handle-color: rgba(255, 255, 255, 0.9);
+.preview-btn {
+  color: #667eea;
+  border-color: rgba(102, 126, 234, 0.2);
 }
 
-.comparison-image-fullscreen {
-  width: 100%;
-  /* height: 100%; */
-  max-height: calc(100vh - 440px);
-  object-fit: contain;
-  background: rgba(0, 0, 0, 0.05);
-  /* 防闪烁优化 */
-  opacity: 1 !important;
-  visibility: visible !important;
-  transition: none !important;
-  animation: none !important;
-  filter: none !important;
-  /* 渲染优化 */
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  image-rendering: crisp-edges;
-  -webkit-backface-visibility: hidden;
+.preview-btn:hover {
+  background: #f0f5ff;
+  border-color: rgba(102, 126, 234, 0.4);
+}
+
+.download-btn {
+  color: #059669;
+  border-color: rgba(5, 150, 105, 0.2);
+}
+
+.download-btn:hover {
+  background: #ecfdf5;
+  border-color: rgba(5, 150, 105, 0.4);
+}
+
+/* 调试信息样式 */
+.debug-info {
+  color: white;
+  padding: 20px;
+  background: rgba(255, 0, 0, 0.3);
+  margin: 10px;
+  border-radius: 8px;
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.debug-info p {
+  margin: 5px 0;
 }
 
 /* 响应式设计 */
@@ -1780,32 +1888,21 @@ function setCurrentImage(index: number): void  {
     max-width: 350px;
   }
 
-  .fullscreen-comparison {
-    height: auto;
-    min-height: 300px;
-    margin-top: 20px;
+  .results-section {
     padding: 10px;
-    overflow: visible;
   }
 
-  .comparison-container-fullscreen {
-    min-height: 250px;
-    height: 300px;
-    display: flex;
+  .results-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    max-height: 180px;
   }
 
-  .fullscreen-comparison {
-    height: auto;
-    min-height: 400px;
-    max-height: none;
-    margin-top: 60px;
-    padding: 10px;
-    overflow: auto;
+  .result-card {
+    width: 100%;
   }
 
-  .comparison-container-fullscreen {
-    max-height: 70vh;
-    display: flex;
+  .result-preview {
+    height: 60px;
   }
 }
 
@@ -2041,15 +2138,9 @@ img-comparison-slider img {
   font-weight: 500;
 }
 
-.compressed-size {
-  color: #059669;
-  font-weight: 500;
-}
-
-.ratio {
+.best-result {
   color: #16a34a;
   font-weight: 700;
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
 }
 
 /* 图片操作按钮 */
@@ -2061,35 +2152,6 @@ img-comparison-slider img {
   border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
-.action-btn-small {
-  background: white;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 6px;
-  padding: 4px 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  flex: 1;
-}
-
-.action-btn-small:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.download-single {
-  color: #059669;
-  border-color: rgba(5, 150, 105, 0.2);
-}
-
-.download-single:hover {
-  background: #ecfdf5;
-  border-color: rgba(5, 150, 105, 0.4);
-}
-
 .delete-single {
   color: #dc2626;
   border-color: rgba(220, 38, 38, 0.2);
@@ -2098,106 +2160,5 @@ img-comparison-slider img {
 .delete-single:hover {
   background: #fef2f2;
   border-color: rgba(220, 38, 38, 0.4);
-}
-
-/* 调试信息样式 */
-.debug-info {
-  color: white;
-  padding: 20px;
-  background: rgba(255, 0, 0, 0.3);
-  margin: 10px;
-  border-radius: 8px;
-  font-family: monospace;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.debug-info p {
-  margin: 5px 0;
-}
-
-/* 单图预览 */
-.single-image-preview {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.single-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-/* 预览覆盖层 */
-.preview-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(102, 126, 234, 0.9);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.preview-overlay.error {
-  background: rgba(239, 68, 68, 0.9);
-}
-
-.overlay-text {
-  font-size: 18px;
-  font-weight: 600;
-  margin-top: 10px;
-}
-
-.overlay-subtext {
-  font-size: 14px;
-  opacity: 0.9;
-  margin-top: 5px;
-  text-align: center;
-  max-width: 300px;
-}
-
-/* 图片信息覆盖层 */
-.image-overlay-info {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-  color: white;
-  padding: 20px;
-  backdrop-filter: blur(10px);
-}
-
-.image-title {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.image-details {
-  display: flex;
-  gap: 12px;
-  font-size: 13px;
-  opacity: 0.9;
-  flex-wrap: wrap;
-}
-
-.image-details .savings {
-  color: #4ade80;
-  font-weight: 700;
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
 }
 </style>

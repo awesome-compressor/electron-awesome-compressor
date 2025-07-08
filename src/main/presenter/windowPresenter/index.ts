@@ -1,7 +1,7 @@
 import { BrowserWindow, shell, ipcMain } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { IWindowPresenter } from '@shared/presenter'
+import { IWindowPresenter, PreviewData } from '@shared/presenter'
 import icon from '../../../../resources/icon.png?asset'
 
 export class WindowPresenter implements IWindowPresenter {
@@ -28,8 +28,8 @@ export class WindowPresenter implements IWindowPresenter {
 
     // Create the browser window
     this.mainWindow = new BrowserWindow({
-      width: 900,
-      height: 670,
+      width: 1200,
+      height: 800,
       show: false,
       autoHideMenuBar: true,
       hasShadow: true, // macOS 阴影
@@ -147,7 +147,7 @@ export class WindowPresenter implements IWindowPresenter {
       parent: this.mainWindow,
       modal: false,
       webPreferences: {
-        preload: join(__dirname, '../../preload/index.mjs'),
+        preload: join(__dirname, '../preload/index.mjs'), // Preload 脚本路径
         sandbox: false
       }
     })
@@ -169,11 +169,62 @@ export class WindowPresenter implements IWindowPresenter {
 
     // Load preview content (for now, same as main window)
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      previewWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/preview/${fileId}`)
+      previewWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/preview/index.html?fileId=${fileId}`)
     } else {
-      previewWindow.loadFile(join(__dirname, '../../renderer/index.html'), {
-        hash: `/preview/${fileId}`
+      previewWindow.loadFile(join(__dirname, '../../renderer/preview/index.html'), {
+        hash: `/?fileId=${fileId}`
       })
+    }
+  }
+
+  /**
+   * Create comparison preview window with original and compressed image data
+   */
+  previewComparison(data: PreviewData): void {
+    console.log('Creating comparison preview window with data:', data)
+
+    const previewWindow = new BrowserWindow({
+      width: 1000,
+      height: 700,
+      show: false,
+      autoHideMenuBar: true,
+      parent: this.mainWindow,
+      modal: false,
+      resizable: true,
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.mjs'), // Preload 脚本路径
+        sandbox: false,
+        devTools: is.dev
+      }
+    })
+
+    // Store reference to preview window
+    this.previewWindows.push(previewWindow)
+
+    // Handle preview window close
+    previewWindow.on('closed', () => {
+      const index = this.previewWindows.indexOf(previewWindow)
+      if (index > -1) {
+        this.previewWindows.splice(index, 1)
+      }
+    })
+
+    previewWindow.on('ready-to-show', () => {
+      previewWindow.show()
+      if (is.dev) {
+        previewWindow.webContents.openDevTools()
+      }
+      // Send data to preview window after it's ready
+      setTimeout(() => {
+        previewWindow.webContents.send('preview-data', data)
+      }, 100)
+    })
+
+    // Load preview content
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      previewWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/preview/index.html`)
+    } else {
+      previewWindow.loadFile(join(__dirname, '../../renderer/preview/index.html'))
     }
   }
 

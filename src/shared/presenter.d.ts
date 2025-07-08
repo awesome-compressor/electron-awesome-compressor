@@ -1,9 +1,24 @@
 import { BrowserWindow } from 'electron'
 
+export interface PreviewData {
+  originalImage: {
+    url: string
+    name: string
+    size: number
+  }
+  compressedImage: {
+    url: string
+    tool: string
+    size: number
+    ratio: number
+  }
+}
+
 export interface IWindowPresenter {
   mainWindow: BrowserWindow | undefined
   previewWindows: BrowserWindow[]
   previewFile(fileId: string): void
+  previewComparison(data: PreviewData): void
   minimize(windowId: number): void
   maximize(windowId: number): void
   close(windowId: number): void
