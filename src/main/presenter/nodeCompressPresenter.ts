@@ -70,19 +70,18 @@ export class NodeCompressPresenter {
     try {
             console.log(`Starting node compression for: ${filename}`)
 
-      // Default compression options
+            // Default compression options
       const compressOptions = {
         quality: options.quality || 0.6,
         maxWidth: options.maxWidth,
         maxHeight: options.maxHeight,
         preserveExif: options.preserveExif || false,
-        returnAllResults: true,
         type: 'buffer' as const
       }
 
-            // Get stats and compressed data
+      // Get stats and compressed data
       const [stats, compressedBuffer] = await Promise.all([
-        compressWithStats(imageBuffer, compressOptions),
+        compressWithStats(imageBuffer, { ...compressOptions, returnAllResults: true }),
         compress(imageBuffer, compressOptions)
       ])
 
@@ -146,6 +145,53 @@ export class NodeCompressPresenter {
     } catch (error) {
       console.error('Error reading input file:', error)
       throw new Error(`Failed to read input file: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+    /**
+   * Compress image from Uint8Array (for IPC compatibility)
+   */
+  async compressImageFromBytes(
+    imageBytes: Uint8Array | ArrayLike<number> | ArrayBuffer,
+    filename: string,
+    options: {
+      quality?: number
+      maxWidth?: number
+      maxHeight?: number
+      preserveExif?: boolean
+    } = {}
+  ): Promise<NodeCompressionStats> {
+    try {
+      console.log(`Converting bytes to Buffer for: ${filename}`)
+      console.log('Image bytes type:', typeof imageBytes, 'constructor:', imageBytes.constructor.name)
+
+      let imageBuffer: Buffer
+
+      // Handle different input types that might come from IPC
+      if (Buffer.isBuffer(imageBytes)) {
+        imageBuffer = imageBytes
+      } else if (imageBytes instanceof Uint8Array) {
+        imageBuffer = Buffer.from(imageBytes)
+      } else if (imageBytes instanceof ArrayBuffer) {
+        imageBuffer = Buffer.from(imageBytes)
+      } else if (Array.isArray(imageBytes)) {
+        // Handle when Uint8Array is serialized as a regular array
+        imageBuffer = Buffer.from(imageBytes)
+      } else if (typeof imageBytes === 'object' && imageBytes !== null) {
+        // Handle when Uint8Array is serialized as an object with numeric keys
+        const bytesArray = Object.values(imageBytes as unknown as Record<string, number>)
+        imageBuffer = Buffer.from(bytesArray)
+      } else {
+        throw new Error(`Unsupported image bytes type: ${typeof imageBytes}`)
+      }
+
+      console.log(`Successfully converted to Buffer, size: ${imageBuffer.length} bytes`)
+
+      // Use existing compressImage method
+      return await this.compressImage(imageBuffer, filename, options)
+    } catch (error) {
+      console.error('Error converting bytes to buffer:', error)
+      throw new Error(`Failed to process image bytes: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

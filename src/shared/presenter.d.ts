@@ -72,6 +72,16 @@ export interface INodeCompressPresenter {
       preserveExif?: boolean
     }
   ): Promise<NodeCompressionStats>
+  compressImageFromBytes(
+    imageBytes: Uint8Array | ArrayLike<number> | ArrayBuffer,
+    filename: string,
+    options?: {
+      quality?: number
+      maxWidth?: number
+      maxHeight?: number
+      preserveExif?: boolean
+    }
+  ): Promise<NodeCompressionStats>
   compressImageFromPath(
     inputPath: string,
     options?: {

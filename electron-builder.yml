@@ -24,6 +24,8 @@ files:
   - '!*.md'
 asarUnpack:
   - resources/**
+  - '**/node_modules/sharp/**/*'
+  - '**/node_modules/@img/**/*'
 electronLanguages:
   - zh-CN
   - zh-TW

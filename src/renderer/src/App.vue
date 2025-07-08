@@ -12,6 +12,7 @@ import { ElMessage } from 'element-plus'
 import { download } from 'lazy-js-utils'
 import { computed, h, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { compress } from '@awesome-compressor/browser-compress-image'
+import { usePresenter } from './composables/usePresenter'
 import 'img-comparison-slider/dist/styles.css'
 
 // 导入 img-comparison-slider
@@ -38,7 +39,7 @@ interface CompressionResult {
   compressedUrl: string
   compressedSize: number
   compressionRatio: number
-  blob: Blob
+  blob: Blob | null // Node压缩结果可能为null
   isBest: boolean
 }
 
@@ -47,6 +48,9 @@ const downloading = ref(false)
 const fileRef = ref()
 const isDragOver = ref(false)
 const currentImageIndex = ref(0)
+
+// Get presenter instances
+const nodeCompressPresenter = usePresenter('nodeCompressPresenter')
 
 // 图片列表状态
 const imageItems = ref<ImageItem[]>([])
@@ -324,8 +328,6 @@ async function processEntry(
 async function handleFileInputChange(): Promise<void> {
   const selectedFiles = Array.from(fileRef.value.files || []) as File[]
   if (selectedFiles.length > 0) {
-    loading.value = true
-
     try {
       const imageFiles = selectedFiles.filter((file) =>
         supportType.includes(file.type),
@@ -336,8 +338,12 @@ async function handleFileInputChange(): Promise<void> {
         message: `Successfully loaded ${imageFiles.length} image(s)`,
         type: 'success',
       })
-    } finally {
-      loading.value = false
+    } catch (error) {
+      console.error('Error processing files:', error)
+      ElMessage({
+        message: 'Error processing files. Please try again.',
+        type: 'error',
+      })
     }
   }
 }
@@ -354,10 +360,19 @@ async function addNewImages(files: File[]): Promise<void> {
     compressionResults: [],
   }))
 
+  // 如果之前没有图片，默认选中第一张
+  const isFirstImages = imageItems.value.length === 0
+
   imageItems.value.push(...newItems)
 
-  // 自动开始压缩所有新添加的图片
-  await compressImages(newItems)
+  // 默认选中第一张图片
+  if (isFirstImages && newItems.length > 0) {
+    currentImageIndex.value = 0
+  }
+
+  // 并行启动browser压缩和node压缩
+  compressImages(newItems) // 不阻塞
+  newItems.forEach(item => compressWithNode(item)) // 并行执行node压缩
 }
 
 // 压缩单个图片
@@ -366,13 +381,18 @@ async function compressImage(item: ImageItem): Promise<void> {
 
   item.isCompressing = true
   item.compressionError = undefined
-  item.compressionResults = []
+  // 不清空已有结果，保留Node压缩结果
 
     try {
     // 临时模拟多种压缩算法的结果
     // TODO: 替换为 compressWithMultipleTools 当API可用时
     const tools = ['browser-image-compression', 'compressorjs', 'canvas']
-    const compressionResults: CompressionResult[] = []
+
+    // 保留现有的 node 压缩结果（用于日志记录）
+    const existingNodeResults = item.compressionResults.filter(r => r.tool.startsWith('node-'))
+    if (existingNodeResults.length > 0) {
+      console.log('Preserving existing node results:', existingNodeResults.length)
+    }
 
     for (const tool of tools) {
       // 为每个工具模拟不同的压缩质量和结果
@@ -389,29 +409,25 @@ async function compressImage(item: ImageItem): Promise<void> {
         const compressedUrl = URL.createObjectURL(compressedBlob)
         const compressionRatio = ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
 
-        compressionResults.push({
+        const newResult: CompressionResult = {
           tool,
           compressedUrl,
           compressedSize: compressedBlob.size,
           compressionRatio,
           blob: compressedBlob,
           isBest: false // 将在下面设置
-        })
+        }
+
+        // 移除该工具的旧结果并添加新结果
+        item.compressionResults = item.compressionResults.filter(r => r.tool !== tool)
+        item.compressionResults.push(newResult)
+
+        // 每次有新结果就立即重新排序并更新显示
+        sortCompressionResults(item)
+
+        console.log(`${tool} compression completed:`, newResult)
       }
     }
-
-    // 找到压缩比最好的结果
-    if (compressionResults.length > 0) {
-      const bestResult = compressionResults.reduce((best, current) =>
-        current.compressionRatio > best.compressionRatio ? current : best
-      )
-      bestResult.isBest = true
-
-      console.log('Best compression tool:', bestResult.tool)
-      console.log('All results:', compressionResults)
-    }
-
-    item.compressionResults = compressionResults
 
     // 为当前图片优化渲染性能
     nextTick(() => {
@@ -445,16 +461,16 @@ async function compressWithNode(item: ImageItem): Promise<void> {
   if (!item.file) return
 
   try {
-    // 将文件转换为Buffer
-    const arrayBuffer = await item.file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+    console.log(`Starting node compression for: ${item.file.name}`)
 
-    // 调用node压缩presenter
-    const result = await window.electron.ipcRenderer.invoke(
-      'presenter:call',
-      'nodeCompressPresenter',
-      'compressImage',
-      buffer,
+    // 将文件转换为ArrayBuffer，传递给主进程处理
+    const arrayBuffer = await item.file.arrayBuffer()
+    // 转换为 Uint8Array 以便在 IPC 中传输
+    const uint8Array = new Uint8Array(arrayBuffer)
+
+    // 使用presenter调用node压缩，传递字节数组而不是Buffer
+    const result = await nodeCompressPresenter.compressImageFromBytes(
+      uint8Array,
       item.file.name,
       {
         quality: item.quality / 100,
@@ -462,26 +478,21 @@ async function compressWithNode(item: ImageItem): Promise<void> {
       }
     )
 
-    if (result && !result.error) {
+    if (result && result.bestTool) {
       // 添加node压缩结果到已有结果中
-      const nodeResult = {
+      const nodeResult: CompressionResult = {
         tool: `node-${result.bestTool}`,
-        compressedUrl: `eacompressor-file://${encodeURIComponent(result.bestFilePath)}`,
+        compressedUrl: `eacompressor-file://${result.bestFilePath}`,
         compressedSize: result.allResults[0]?.compressedSize || 0,
         compressionRatio: result.compressionRatio,
         blob: null, // Node结果不是blob
         isBest: false
       }
 
-      // 检查是否比现有结果更好
-      const currentBest = item.compressionResults.find(r => r.isBest)
-      if (!currentBest || nodeResult.compressionRatio > currentBest.compressionRatio) {
-        // 移除之前的最佳标记
-        item.compressionResults.forEach(r => r.isBest = false)
-        nodeResult.isBest = true
-      }
-
+      // 添加结果并重新排序
       item.compressionResults.push(nodeResult)
+      sortCompressionResults(item)
+
       console.log(`Node compression completed for ${item.file.name}: ${result.compressionRatio.toFixed(1)}%`)
     }
   } catch (error) {
@@ -489,10 +500,25 @@ async function compressWithNode(item: ImageItem): Promise<void> {
   }
 }
 
+// 对压缩结果按压缩率排序并标记最佳结果
+function sortCompressionResults(item: ImageItem): void {
+  if (item.compressionResults.length === 0) return
+
+  // 按压缩率从高到低排序
+  item.compressionResults.sort((a, b) => b.compressionRatio - a.compressionRatio)
+
+  // 重新标记最佳结果
+  item.compressionResults.forEach((result, index) => {
+    result.isBest = index === 0
+  })
+}
+
 // 单张图片质量改变处理
 async function handleImageQualityChange(item: ImageItem, newQuality: number): Promise<void> {
   item.quality = newQuality
-  await compressImage(item)
+  // 并行启动browser压缩和node压缩
+  compressImage(item) // 不阻塞
+  compressWithNode(item) // 并行执行node压缩
 }
 
 // 优化图片渲染性能
@@ -960,18 +986,20 @@ function setCurrentImage(index: number): void  {
 <style scoped>
 .app-container {
   min-height: 100vh;
+  height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   position: relative;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   /* 优化滚动性能 */
   -webkit-overflow-scrolling: touch;
   /* 减少重绘 */
   transform: translateZ(0);
   will-change: scroll-position;
   transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-container.drag-over {
@@ -1202,9 +1230,11 @@ function setCurrentImage(index: number): void  {
   z-index: 1;
   display: flex;
   flex-direction: column;
+  flex: 1;
   max-width: 100vw;
   margin: 0;
   padding: 0;
+  overflow: hidden;
 }
 
 /* 英雄上传区域 */
@@ -1304,10 +1334,7 @@ function setCurrentImage(index: number): void  {
   flex-direction: column;
   padding: 10px 15px;
   gap: 15px;
-  min-height: calc(100vh - 120px);
-  overflow: visible;
-  /* 提高空间利用率 */
-  max-height: calc(100vh - 120px);
+  overflow: hidden;
 }
 
 /* 文件信息区域 */
@@ -1611,6 +1638,8 @@ function setCurrentImage(index: number): void  {
   backdrop-filter: blur(10px);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-y: auto;
+  max-height: 100%;
 }
 
 .results-header {
@@ -1788,10 +1817,8 @@ function setCurrentImage(index: number): void  {
 /* 响应式设计 */
 @media (max-width: 768px) {
   .app-container {
-    overflow-y: auto;
-    overflow-x: hidden;
-    min-height: 100vh;
-    height: auto;
+    height: 100vh;
+    overflow: hidden;
   }
 
   .drag-overlay {
@@ -1846,8 +1873,8 @@ function setCurrentImage(index: number): void  {
 
   .images-section {
     padding: 10px;
-    min-height: calc(100vh - 120px);
-    overflow: visible;
+    overflow: hidden;
+    flex: 1;
   }
 
   .images-grid {
@@ -2016,8 +2043,8 @@ img-comparison-slider img {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 10px;
-  max-height: calc(35vh);
-  min-height: 180px;
+  max-height: 200px;
+  min-height: 120px;
   overflow-y: auto;
   padding: 8px;
   background: rgba(255, 255, 255, 0.05);

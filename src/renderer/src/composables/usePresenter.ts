@@ -11,6 +11,22 @@ function safeSerialize(obj: unknown): unknown {
     return new Date(obj.getTime())
   }
 
+  // 处理 TypedArray (Uint8Array, Int8Array, etc.)
+  if (obj instanceof Uint8Array) {
+    return obj // Uint8Array 可以直接通过 IPC 传输
+  }
+
+  // 处理其他 TypedArray 类型
+  if (ArrayBuffer.isView(obj)) {
+    // 转换为 Uint8Array 以便 IPC 传输
+    return new Uint8Array(obj.buffer, obj.byteOffset, obj.byteLength)
+  }
+
+  // 处理 ArrayBuffer
+  if (obj instanceof ArrayBuffer) {
+    return new Uint8Array(obj)
+  }
+
   if (Array.isArray(obj)) {
     return obj.map((item) => safeSerialize(item))
   }
