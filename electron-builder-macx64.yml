@@ -43,13 +43,6 @@ electronLanguages:
   - fr
   - fa-IR
   - fa
-win:
-  executableName: electron-awesome-compressor
-nsis:
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -57,19 +50,15 @@ mac:
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
-dmg:
-  artifactName: ${name}-${version}.${ext}
-linux:
+  gatekeeperAssess: false
+  category: public.app-category.utilities
   target:
-    - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
-  category: Utility
-appImage:
-  artifactName: ${name}-${version}.${ext}
-npmRebuild: false
+    - target: dmg
+      arch: x64
+    - target: zip
+      arch: x64
+  artifactName: ${name}-${version}-mac-${arch}.${ext}
+npmRebuild: true
 publish:
   provider: generic
   url: https://compressor.anya2a.com/upgrade/
