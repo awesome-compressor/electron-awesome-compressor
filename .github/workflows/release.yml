@@ -1,0 +1,101 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      workflow_id:
+        description: 'Build workflow run ID to use for artifacts'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts from workflow
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow_conclusion: success
+          run_id: ${{ github.event.inputs.workflow_id }}
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: find artifacts -type f | sort
+
+      - name: Get version number
+        id: get_version
+        run: |
+          VERSION_FILE=$(find artifacts/electron-awesome-compressor-linux-x64 -name "electron-awesome-compressor-*.tar.gz" | head -n 1)
+          if [ -n "$VERSION_FILE" ]; then
+            VERSION=$(echo $VERSION_FILE | grep -o 'electron-awesome-compressor-[0-9]\+\.[0-9]\+\.[0-9]\+' | sed 's/electron-awesome-compressor-//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Found version: $VERSION"
+          else
+            echo "Error: electron-awesome-compressor tar.gz file not found"
+            exit 1
+          fi
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release_assets
+
+          # Process Windows x64 artifacts
+          if [ -d "artifacts/electron-awesome-compressor-win-x64" ]; then
+            cp artifacts/electron-awesome-compressor-win-x64/*.exe release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-win-x64/*.msi release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-win-x64/*.zip release_assets/ 2>/dev/null || true
+          fi
+
+          # Process Windows arm64 artifacts
+          if [ -d "artifacts/electron-awesome-compressor-win-arm64" ]; then
+            cp artifacts/electron-awesome-compressor-win-arm64/*.exe release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-win-arm64/*.msi release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-win-arm64/*.zip release_assets/ 2>/dev/null || true
+          fi
+
+          # Process Linux x64 artifacts
+          if [ -d "artifacts/electron-awesome-compressor-linux-x64" ]; then
+            cp artifacts/electron-awesome-compressor-linux-x64/*.AppImage release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-linux-x64/*.deb release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-linux-x64/*.rpm release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-linux-x64/*.tar.gz release_assets/ 2>/dev/null || true
+          fi
+
+          # Process Mac x64 artifacts
+          if [ -d "artifacts/electron-awesome-compressor-mac-x64" ]; then
+            cp artifacts/electron-awesome-compressor-mac-x64/*.dmg release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-mac-x64/*.zip release_assets/ 2>/dev/null || true
+          fi
+
+          # Process Mac arm64 artifacts
+          if [ -d "artifacts/electron-awesome-compressor-mac-arm64" ]; then
+            cp artifacts/electron-awesome-compressor-mac-arm64/*.dmg release_assets/ 2>/dev/null || true
+            cp artifacts/electron-awesome-compressor-mac-arm64/*.zip release_assets/ 2>/dev/null || true
+          fi
+
+          ls -la release_assets/
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: workflow-${{ github.event.inputs.workflow_id }}
+          name: electron-awesome-compressor V${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: ${{ github.event.inputs.prerelease }}
+          files: |
+            release_assets/*
+          body: |
+            # 🚀 electron-awesome-compressor ${{ steps.get_version.outputs.version }} Released
+
+            📦 **构建信息**
+            - Workflow ID: `${{ github.event.inputs.workflow_id }}`
+            - Version: `${{ steps.get_version.outputs.version }}`
+            - Run id: `${{ github.run_id }}`
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
