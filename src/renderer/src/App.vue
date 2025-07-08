@@ -384,7 +384,7 @@ async function compressImage(item: ImageItem): Promise<void> {
   // 不清空已有结果，保留Node压缩结果
 
   try {
-            // 保留现有的 node 压缩结果（用于日志记录）
+    // 保留现有的 node 压缩结果（用于日志记录）
     const existingNodeResults = item.compressionResults.filter(r => r.tool.startsWith('node-'))
     if (existingNodeResults.length > 0) {
       console.log('Preserving existing node results:', existingNodeResults.length)
@@ -408,14 +408,16 @@ async function compressImage(item: ImageItem): Promise<void> {
       )
     })
 
-                // 处理所有压缩结果
+    // 处理所有压缩结果
     if (allResults.allResults && allResults.allResults.length > 0) {
-      for (const result of allResults.allResults) {
-        if (result && result instanceof Blob) {
-          // result 是标准 Blob 对象，但带有额外属性
-          const tool = (result as any).tool || 'unknown'
-          const compressedSize = result.size
-          const compressionRatio = ((item.originalSize - result.size) / item.originalSize) * 100
+      for (const resultItem of allResults.allResults) {
+        if (resultItem && resultItem.result && resultItem.result instanceof Blob) {
+          // 从结果项中提取数据
+          const tool = resultItem.tool || 'unknown'
+          const result = resultItem.result
+          const compressedSize = resultItem.compressedSize || result.size
+          const compressionRatio = resultItem.compressionRatio ||
+            ((item.originalSize - result.size) / item.originalSize) * 100
 
           const compressedUrl = URL.createObjectURL(result)
 
@@ -437,7 +439,7 @@ async function compressImage(item: ImageItem): Promise<void> {
 
           console.log(`${tool} compression completed: ${compressedSize} bytes (${compressionRatio.toFixed(1)}% reduction)`)
         } else {
-          console.warn('Invalid result object:', result)
+          console.warn('Invalid result object:', resultItem)
         }
       }
     }
@@ -492,10 +494,13 @@ async function compressWithNode(item: ImageItem): Promise<void> {
     )
 
     if (result && result.bestTool) {
+      // 确保文件路径正确编码，避免特殊字符问题
+      const encodedPath = encodeURI(result.bestFilePath)
+
       // 添加node压缩结果到已有结果中
       const nodeResult: CompressionResult = {
         tool: `node-${result.bestTool}`,
-        compressedUrl: `eacompressor-file://${result.bestFilePath}`,
+        compressedUrl: `eacompressor-file://${encodedPath.startsWith('/') ? encodedPath : '/' + encodedPath}`,
         compressedSize: result.allResults[0]?.compressedSize || 0,
         compressionRatio: result.compressionRatio,
         blob: null, // Node结果不是blob
@@ -507,6 +512,8 @@ async function compressWithNode(item: ImageItem): Promise<void> {
       sortCompressionResults(item)
 
       console.log(`Node compression completed for ${item.file.name}: ${result.compressionRatio.toFixed(1)}%`)
+      console.log(`Generated protocol URL: ${nodeResult.compressedUrl}`)
+      console.log(`Original file path: ${result.bestFilePath}`)
     }
   } catch (error) {
     console.error('Node compression error for', item.file.name, ':', error)

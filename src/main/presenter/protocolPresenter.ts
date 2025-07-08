@@ -46,12 +46,14 @@ export class ProtocolPresenter implements IProtocolPresenter {
     // Register eacompressor-file:// protocol for accessing compressed files
     protocol.registerFileProtocol('eacompressor-file', (request, callback) => {
       const url = request.url.replace('eacompressor-file://', '')
-      const decodedPath = decodeURIComponent(url)
+      const filePath = decodeURIComponent(url)
 
-      console.log(`Handling eacompressor-file protocol: ${decodedPath}`)
+      console.log(`[Protocol] eacompressor-file request: ${request.url}`)
+      console.log(`[Protocol] Extracted URL: ${url}`)
+      console.log(`[Protocol] Final file path: ${filePath}`)
 
       // Validate that the path is within the temp directory for security
-      this.validateAndRespondWithFile(decodedPath, callback)
+      this.validateAndRespondWithFile(filePath, callback)
     })
 
     this.registeredProtocols.push('eacompressor')
@@ -134,17 +136,19 @@ export class ProtocolPresenter implements IProtocolPresenter {
     callback: (response: string | Electron.ProtocolResponse) => void
   ): void {
     try {
+      console.log(`[Protocol] Validating file path: ${filePath}`)
+
       // Check if file exists
       if (!existsSync(filePath)) {
-        console.warn(`File not found: ${filePath}`)
+        console.warn(`[Protocol] File not found: ${filePath}`)
         callback({ statusCode: 404, data: 'File not found' })
         return
       }
 
-      console.log(`Serving compressed file: ${filePath}`)
+      console.log(`[Protocol] Serving compressed file: ${filePath}`)
       callback({ path: filePath })
     } catch (error) {
-      console.error('Error validating file path:', error)
+      console.error('[Protocol] Error validating file path:', error)
       callback({ statusCode: 500, data: 'Internal error' })
     }
   }
