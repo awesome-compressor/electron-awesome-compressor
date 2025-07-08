@@ -16,7 +16,7 @@ export interface PreviewData {
 
 export interface NodeCompressionResult {
   tool: string
-  filePath: string
+  fileId: string // Changed from filePath to fileId
   originalSize: number
   compressedSize: number
   compressionRatio: number
@@ -25,7 +25,7 @@ export interface NodeCompressionResult {
 
 export interface NodeCompressionStats {
   bestTool: string
-  bestFilePath: string
+  bestFileId: string // Changed from bestFilePath to bestFileId
   compressionRatio: number
   totalDuration: number
   allResults: NodeCompressionResult[]
@@ -93,6 +93,9 @@ export interface INodeCompressPresenter {
   ): Promise<NodeCompressionStats>
   getTempDir(): string
   cleanupTempFiles(olderThanHours?: number): Promise<void>
+  getFilePathById(fileId: string): string | null
+  getAllFileIds(): string[]
+  clearFileById(fileId: string): Promise<boolean>
 }
 
 export interface IPresenter {

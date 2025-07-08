@@ -46,17 +46,15 @@ export class ProtocolPresenter implements IProtocolPresenter {
     // Register eacompressor-file:// protocol for accessing compressed files
     protocol.registerFileProtocol('eacompressor-file', (request, callback) => {
       try {
-        const base64Path = request.url.replace('eacompressor-file://', '')
-        const filePath = decodeURIComponent(base64Path)
         console.log(`[Protocol] eacompressor-file request: ${request.url}`)
-        console.log(`[Protocol] Extracted base64: ${base64Path}`)
-        console.log(`[Protocol] Decoded file path: ${filePath}`)
+        const fileId = request.url.replace('eacompressor-file://', '')
+        console.log(`[Protocol] Extracted file ID: ${fileId}`)
 
-        // Validate that the path is within the temp directory for security
-        this.validateAndRespondWithFile(filePath, callback)
+        // Get file path from nodeCompressPresenter using the file ID
+        this.resolveFileById(fileId, callback)
       } catch (error) {
-        console.error('[Protocol] Error decoding base64 path:', error)
-        callback({ statusCode: 400, data: 'Invalid path encoding' })
+        console.error('[Protocol] Error processing file ID:', error)
+        callback({ statusCode: 400, data: 'Invalid file ID' })
       }
     })
 
@@ -130,6 +128,41 @@ export class ProtocolPresenter implements IProtocolPresenter {
 
     // Emit event to renderer to open settings
     this.notifyRenderer('protocol:settings', { section })
+  }
+
+  /**
+   * Resolve file by ID and respond with file content for eacompressor-file protocol
+   */
+  private async resolveFileById(
+    fileId: string,
+    callback: (response: string | Electron.ProtocolResponse) => void
+  ): Promise<void> {
+    try {
+      console.log(`[Protocol] Resolving file ID: ${fileId}`)
+
+      // Import presenter to access nodeCompressPresenter
+      const { presenter } = await import('./index')
+      const filePath = presenter.nodeCompressPresenter.getFilePathById(fileId)
+
+      if (!filePath) {
+        console.warn(`[Protocol] File ID not found: ${fileId}`)
+        callback({ statusCode: 404, data: 'File not found' })
+        return
+      }
+
+      // Check if file exists on disk
+      if (!existsSync(filePath)) {
+        console.warn(`[Protocol] File not found on disk: ${filePath}`)
+        callback({ statusCode: 404, data: 'File not found on disk' })
+        return
+      }
+
+      console.log(`[Protocol] Serving compressed file: ${filePath}`)
+      callback({ path: filePath })
+    } catch (error) {
+      console.error('[Protocol] Error resolving file by ID:', error)
+      callback({ statusCode: 500, data: 'Internal error' })
+    }
   }
 
   /**
@@ -236,15 +269,12 @@ export class ProtocolPresenter implements IProtocolPresenter {
     if (process.platform === 'win32') {
       // Windows
       app.setAsDefaultProtocolClient('eacompressor')
-      app.setAsDefaultProtocolClient('eacompressor-file')
     } else if (process.platform === 'darwin') {
       // macOS
       app.setAsDefaultProtocolClient('eacompressor')
-      app.setAsDefaultProtocolClient('eacompressor-file')
     } else {
       // Linux
       app.setAsDefaultProtocolClient('eacompressor')
-      app.setAsDefaultProtocolClient('eacompressor-file')
     }
   }
 

@@ -60,7 +60,6 @@ function createProxy(presenterName: string): any {
           // 先使用 toRaw 获取原始对象，然后安全序列化
           const rawPayloads = payloads.map((e) => safeSerialize(toRaw(e)))
 
-
           return await window.electron.ipcRenderer
             .invoke('presenter:call', presenterName, functionName, ...rawPayloads)
             .catch((e: Error) => {

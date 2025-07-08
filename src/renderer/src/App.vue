@@ -15,6 +15,7 @@ import { compress } from '@awesome-compressor/browser-compress-image'
 import { usePresenter } from './composables/usePresenter'
 import 'img-comparison-slider/dist/styles.css'
 
+
 // 导入 img-comparison-slider
 import('img-comparison-slider')
 
@@ -32,6 +33,9 @@ interface ImageItem {
   isNodeCompressing: boolean
   compressionResults: CompressionResult[]
   compressionError?: string
+  // 添加处理标记位
+  browserCompressionStarted: boolean // 是否已经开始browser压缩
+  nodeCompressionStarted: boolean // 是否已经开始node压缩
 }
 
 
@@ -366,6 +370,9 @@ async function addNewImages(files: File[]): Promise<void> {
     isNodeCompressing: false,
     quality: 60, // 默认质量
     compressionResults: [],
+    // 初始化新的标记位
+    browserCompressionStarted: false,
+    nodeCompressionStarted: false,
   }))
 
   // 如果之前没有图片，默认选中第一张
@@ -378,9 +385,8 @@ async function addNewImages(files: File[]): Promise<void> {
     currentImageIndex.value = 0
   }
 
-  // 并行启动browser压缩和node压缩
-  compressImages(newItems) // 不阻塞
-  newItems.forEach(item => compressWithNode(item)) // 并行执行node压缩
+  // 启动对所有未处理图片的压缩
+  startCompressionForUnprocessedImages()
 }
 
 // 压缩单个图片
@@ -388,6 +394,7 @@ async function compressImage(item: ImageItem): Promise<void> {
   if (item.isBrowserCompressing) return
 
   item.isBrowserCompressing = true
+  item.browserCompressionStarted = true
   item.compressionError = undefined
   // 不清空已有结果，保留Node压缩结果
 
@@ -410,15 +417,13 @@ async function compressImage(item: ImageItem): Promise<void> {
     console.log('最优工具:', allResults.bestTool)
     console.log('最优结果:', allResults.bestResult)
     console.log('所有结果:', allResults.allResults)
-    allResults.allResults.forEach((result) => {
-      console.log(
-        `${result.tool}: ${result.compressedSize} bytes (${result.compressionRatio.toFixed(1)}% reduction)`,
-      )
-    })
 
     // 处理所有压缩结果
     if (allResults.allResults && allResults.allResults.length > 0) {
       for (const resultItem of allResults.allResults) {
+        console.log(
+        `${resultItem.tool}: ${resultItem.compressedSize} bytes (${resultItem.compressionRatio.toFixed(1)}% reduction)`,
+      )
         if (resultItem && resultItem.result && resultItem.result instanceof Blob) {
           // 从结果项中提取数据
           const tool = resultItem.tool || 'unknown'
@@ -461,23 +466,45 @@ async function compressImage(item: ImageItem): Promise<void> {
       error instanceof Error ? error.message : 'Compression failed'
   } finally {
     console.log('browser compression finished')
-    imageItems.value = imageItems.value.map(item => {
-      if (item.file.name === item.file.name) {
-        return { ...item, isBrowserCompressing: false }
-      }
-      return item
+    item.isBrowserCompressing = false
+  }
+}
+
+// 启动对所有未处理图片的压缩
+function startCompressionForUnprocessedImages(): void {
+  // 找出需要开始browser压缩的图片
+  const needsBrowserCompression = imageItems.value.filter(
+    item => !item.browserCompressionStarted && !item.isBrowserCompressing
+  )
+
+  // 找出需要开始node压缩的图片
+  const needsNodeCompression = imageItems.value.filter(
+    item => !item.nodeCompressionStarted && !item.isNodeCompressing
+  )
+
+  // 并行启动browser压缩
+  if (needsBrowserCompression.length > 0) {
+    compressImagesSequentially(needsBrowserCompression)
+  }
+
+  // 并行启动node压缩
+  if (needsNodeCompression.length > 0) {
+    needsNodeCompression.forEach(item => {
+      compressWithNode(item) // 函数内部会设置 nodeCompressionStarted = true
     })
   }
 }
 
-// 批量压缩图片
-async function compressImages(items: ImageItem[] = imageItems.value): Promise<void> {
+// 批量压缩图片（按批次处理避免性能问题）
+async function compressImagesSequentially(items: ImageItem[]): Promise<void> {
   try {
     // 并发压缩，但限制并发数量避免性能问题
     const batchSize = 3
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize)
-      await Promise.all(batch.map((item) => compressImage(item)))
+      await Promise.all(batch.map((item) => {
+        return compressImage(item) // 函数内部会设置 browserCompressionStarted = true
+      }))
     }
   } catch (error) {
     console.error('Batch compression error:', error)
@@ -492,6 +519,7 @@ async function compressWithNode(item: ImageItem): Promise<void> {
   if (item.isNodeCompressing) return
 
   item.isNodeCompressing = true
+  item.nodeCompressionStarted = true
 
   try {
     console.log(`Starting node compression for: ${item.file.name}`)
@@ -511,15 +539,18 @@ async function compressWithNode(item: ImageItem): Promise<void> {
       }
     )
 
-    if (result && result.bestTool) {
-      // 使用 base64 编码文件路径以提高安全性
-      const base64Path = encodeURIComponent(result.bestFilePath)
+    if (result && result.bestTool && result.bestFileId) {
+      // 使用文件ID而不是文件路径
+      const fileId = result.bestFileId
+
+      // 从allResults中获取正确的压缩大小
+      const compressedSize = result.allResults.length > 0 ? result.allResults[0].compressedSize : 0
 
       // 添加node压缩结果到已有结果中
       const nodeResult: CompressionResult = {
         tool: `node-${result.bestTool}`,
-        compressedUrl: `eacompressor-file://${base64Path}`,
-        compressedSize: result.allResults[0]?.compressedSize || 0,
+        compressedUrl: `eacompressor-file://getFile?id=${fileId}`,
+        compressedSize,
         compressionRatio: result.compressionRatio,
         blob: null, // Node结果不是blob
         isBest: false
@@ -531,7 +562,7 @@ async function compressWithNode(item: ImageItem): Promise<void> {
 
       console.log(`Node compression completed for ${item.file.name}: ${result.compressionRatio.toFixed(1)}%`)
       console.log(`Generated protocol URL: ${nodeResult.compressedUrl}`)
-      console.log(`Original file path: ${result.bestFilePath}`)
+      console.log(`File ID: ${fileId}`)
     } else {
       console.warn(`Node compression failed for ${item.file.name}: no valid result`)
     }
@@ -540,12 +571,7 @@ async function compressWithNode(item: ImageItem): Promise<void> {
     // 如果node压缩失败，不要影响整体流程，只记录错误
   } finally {
     console.log('node compression finished')
-    imageItems.value = imageItems.value.map(item => {
-      if (item.file.name === item.file.name) {
-        return { ...item, isNodeCompressing: false }
-      }
-      return item
-    })
+    item.isNodeCompressing = false
   }
 }
 
@@ -580,9 +606,13 @@ async function handleImageQualityChange(item: ImageItem, newQuality: number): Pr
     // 可以选择等待或直接返回，这里选择直接启动新的压缩
   }
 
+  // 重置标记位，重新开始压缩
+  item.browserCompressionStarted = false
+  item.nodeCompressionStarted = false
+
   // 并行启动browser压缩和node压缩
-  compressImage(item) // 不阻塞
-  compressWithNode(item) // 并行执行node压缩
+  compressImage(item) // 不阻塞，函数内部会设置 browserCompressionStarted = true
+  compressWithNode(item) // 并行执行node压缩，函数内部会设置 nodeCompressionStarted = true
 }
 
 // 优化图片渲染性能

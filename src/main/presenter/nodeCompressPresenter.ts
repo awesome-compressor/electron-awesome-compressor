@@ -3,20 +3,31 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import { compress, compressWithStats } from '@awesome-compressor/node-image-compression'
 
-// Compression result interface
+// File storage entry interface
+interface StoredFileEntry {
+  id: string
+  filePath: string
+  filename: string
+  tool: string
+  createdAt: number
+  originalSize: number
+  compressedSize: number
+}
+
+// Compression result interface - now returns ID instead of file path
 export interface NodeCompressionResult {
   tool: string
-  filePath: string
+  fileId: string // Changed from filePath to fileId
   originalSize: number
   compressedSize: number
   compressionRatio: number
   duration: number
 }
 
-// Compression stats interface
+// Compression stats interface - now returns ID instead of file path
 export interface NodeCompressionStats {
   bestTool: string
-  bestFilePath: string
+  bestFileId: string // Changed from bestFilePath to bestFileId
   compressionRatio: number
   totalDuration: number
   allResults: NodeCompressionResult[]
@@ -24,6 +35,7 @@ export interface NodeCompressionStats {
 
 export class NodeCompressPresenter {
   private tempDir: string
+  private fileStorage: Map<string, StoredFileEntry> = new Map()
 
   constructor() {
     console.log('NodeCompressPresenter constructor')
@@ -55,6 +67,58 @@ export class NodeCompressPresenter {
   }
 
   /**
+   * Generate unique file ID based on image type and timestamp
+   */
+  private generateFileId(filename: string, tool: string): string {
+    const timestamp = Date.now()
+    const randomSuffix = Math.random().toString(36).substr(2, 6)
+    const extension = filename.split('.').pop()?.toLowerCase() || 'jpg'
+    return `${extension}_${tool}_${timestamp}_${randomSuffix}`
+  }
+
+  /**
+   * Store file and return unique ID
+   */
+  private storeFile(filePath: string, filename: string, tool: string, originalSize: number, compressedSize: number): string {
+    const fileId = this.generateFileId(filename, tool)
+
+    const entry: StoredFileEntry = {
+      id: fileId,
+      filePath,
+      filename,
+      tool,
+      createdAt: Date.now(),
+      originalSize,
+      compressedSize
+    }
+
+    this.fileStorage.set(fileId, entry)
+    console.log(`Stored file with ID: ${fileId}, path: ${filePath}`)
+
+    return fileId
+  }
+
+  /**
+   * Get file path by ID (for protocol handler)
+   */
+  getFilePathById(fileId: string): string | null {
+    const entry = this.fileStorage.get(fileId)
+    if (entry) {
+      console.log(`Retrieved file path for ID ${fileId}: ${entry.filePath}`)
+      return entry.filePath
+    }
+    console.warn(`File ID not found: ${fileId}`)
+    return null
+  }
+
+  /**
+   * Get file info by ID
+   */
+  getFileInfoById(fileId: string): StoredFileEntry | null {
+    return this.fileStorage.get(fileId) || null
+  }
+
+  /**
    * Compress image using node-image-compression with all available tools
    */
   async compressImage(
@@ -68,9 +132,9 @@ export class NodeCompressPresenter {
     } = {}
   ): Promise<NodeCompressionStats> {
     try {
-            console.log(`Starting node compression for: ${filename}`)
+      console.log(`Starting node compression for: ${filename}`)
 
-            // Default compression options
+      // Default compression options
       const compressOptions = {
         quality: options.quality || 0.6,
         maxWidth: options.maxWidth,
@@ -91,6 +155,7 @@ export class NodeCompressPresenter {
 
       // Save the best compression result
       const allResults: NodeCompressionResult[] = []
+      let bestFileId = ''
 
       if (compressedBuffer && Buffer.isBuffer(compressedBuffer)) {
         const outputFilename = this.generateOutputFilename(filename, stats.bestTool)
@@ -98,9 +163,13 @@ export class NodeCompressPresenter {
 
         await fs.writeFile(outputPath, compressedBuffer)
 
+        // Store file and get ID
+        const fileId = this.storeFile(outputPath, filename, stats.bestTool, imageBuffer.length, compressedBuffer.length)
+        bestFileId = fileId
+
         allResults.push({
           tool: stats.bestTool,
-          filePath: outputPath,
+          fileId, // Use fileId instead of filePath
           originalSize: imageBuffer.length,
           compressedSize: compressedBuffer.length,
           compressionRatio: stats.compressionRatio,
@@ -108,12 +177,9 @@ export class NodeCompressPresenter {
         })
       }
 
-      // Best result file path
-      const bestFilePath = allResults.length > 0 ? allResults[0].filePath : ''
-
       return {
         bestTool: stats.bestTool,
-        bestFilePath,
+        bestFileId, // Use bestFileId instead of bestFilePath
         compressionRatio: stats.compressionRatio,
         totalDuration: stats.totalDuration,
         allResults
@@ -212,25 +278,64 @@ export class NodeCompressPresenter {
   }
 
   /**
-   * Clean up old temp files (optional maintenance)
+   * Clean up old temp files and memory storage (optional maintenance)
    */
   async cleanupTempFiles(olderThanHours: number = 24): Promise<void> {
     try {
-      const files = await fs.readdir(this.tempDir)
       const cutoffTime = Date.now() - (olderThanHours * 60 * 60 * 1000)
+      const expiredIds: string[] = []
 
-      for (const file of files) {
-        const filePath = join(this.tempDir, file)
-        const stats = await fs.stat(filePath)
-
-        if (stats.mtime.getTime() < cutoffTime) {
-          await fs.unlink(filePath)
-          console.log(`Cleaned up old temp file: ${file}`)
+      // Clean up memory storage and collect expired file IDs
+      for (const [id, entry] of this.fileStorage.entries()) {
+        if (entry.createdAt < cutoffTime) {
+          expiredIds.push(id)
         }
       }
+
+      // Remove expired files from disk and memory
+      for (const id of expiredIds) {
+        const entry = this.fileStorage.get(id)
+        if (entry) {
+          try {
+            await fs.unlink(entry.filePath)
+            console.log(`Cleaned up old temp file: ${entry.filename} (${id})`)
+          } catch (error) {
+            console.warn(`Failed to delete file ${entry.filePath}:`, error)
+          }
+          this.fileStorage.delete(id)
+        }
+      }
+
+      console.log(`Cleaned up ${expiredIds.length} expired files`)
     } catch (error) {
       console.warn('Error during temp file cleanup:', error)
     }
+  }
+
+  /**
+   * Get all stored file IDs
+   */
+  getAllFileIds(): string[] {
+    return Array.from(this.fileStorage.keys())
+  }
+
+  /**
+   * Clear specific file by ID
+   */
+  async clearFileById(fileId: string): Promise<boolean> {
+    const entry = this.fileStorage.get(fileId)
+    if (entry) {
+      try {
+        await fs.unlink(entry.filePath)
+        this.fileStorage.delete(fileId)
+        console.log(`Cleared file with ID: ${fileId}`)
+        return true
+      } catch (error) {
+        console.warn(`Failed to clear file ${fileId}:`, error)
+        return false
+      }
+    }
+    return false
   }
 
   /**
@@ -247,5 +352,8 @@ export class NodeCompressPresenter {
     console.log('NodeCompressPresenter cleanup')
     // Optionally clean up temp files on shutdown
     await this.cleanupTempFiles(0) // Clean up all files
+    // Clear memory storage
+    this.fileStorage.clear()
+    console.log('Cleared all file storage')
   }
 }
