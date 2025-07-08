@@ -1,4 +1,4 @@
-import { BrowserWindow, shell, ipcMain } from 'electron'
+import { BrowserWindow, shell, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { IWindowPresenter, PreviewData } from '@shared/presenter'
@@ -10,6 +10,60 @@ export class WindowPresenter implements IWindowPresenter {
 
   constructor() {
     console.log('WindowPresenter constructor')
+  }
+
+  /**
+   * Calculate optimal window dimensions based on screen size
+   */
+  private calculateMainWindowDimensions(): { width: number; height: number; x: number; y: number } {
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
+
+    // Main window should occupy about 70% of screen width and 80% of screen height
+    const width = Math.min(Math.max(Math.floor(screenWidth * 0.7), 800), 1400)
+    const height = Math.min(Math.max(Math.floor(screenHeight * 0.8), 600), 1000)
+
+    // Center the window
+    const x = Math.floor((screenWidth - width) / 2)
+    const y = Math.floor((screenHeight - height) / 2)
+
+    return { width, height, x, y }
+  }
+
+  /**
+   * Calculate optimal preview window dimensions and position
+   */
+  private calculatePreviewWindowDimensions(): { width: number; height: number; x: number; y: number } {
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
+
+    // Preview window should be smaller, about 50% of screen width and 60% of screen height
+    const width = Math.min(Math.max(Math.floor(screenWidth * 0.5), 600), 1000)
+    const height = Math.min(Math.max(Math.floor(screenHeight * 0.6), 500), 800)
+
+    // Position to the right side if main window exists
+    let x = Math.floor((screenWidth - width) / 2)
+    let y = Math.floor((screenHeight - height) / 2)
+
+    if (this.mainWindow) {
+      const mainBounds = this.mainWindow.getBounds()
+      // Try to position to the right of main window
+      const rightPosition = mainBounds.x + mainBounds.width + 20
+      if (rightPosition + width <= screenWidth) {
+        x = rightPosition
+        y = mainBounds.y
+      } else {
+        // If no space on right, position to the left
+        const leftPosition = mainBounds.x - width - 20
+        if (leftPosition >= 0) {
+          x = leftPosition
+          y = mainBounds.y
+        }
+        // Otherwise use center position (already calculated)
+      }
+    }
+
+    return { width, height, x, y }
   }
 
   /**
@@ -25,11 +79,14 @@ export class WindowPresenter implements IWindowPresenter {
    * Create and configure main window
    */
   private async createMainWindow(): Promise<void> {
+    const { width, height, x, y } = this.calculateMainWindowDimensions()
 
     // Create the browser window
     this.mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
+      width,
+      height,
+      x,
+      y,
       show: false,
       autoHideMenuBar: true,
       hasShadow: true, // macOS 阴影
@@ -139,9 +196,13 @@ export class WindowPresenter implements IWindowPresenter {
   previewFile(fileId: string): void {
     console.log(`Creating preview window for file: ${fileId}`)
 
+    const { width, height, x, y } = this.calculatePreviewWindowDimensions()
+
     const previewWindow = new BrowserWindow({
-      width: 800,
-      height: 600,
+      width,
+      height,
+      x,
+      y,
       show: false,
       autoHideMenuBar: true,
       parent: this.mainWindow,
@@ -183,9 +244,13 @@ export class WindowPresenter implements IWindowPresenter {
   previewComparison(data: PreviewData): void {
     console.log('Creating comparison preview window with data:', data)
 
+    const { width, height, x, y } = this.calculatePreviewWindowDimensions()
+
     const previewWindow = new BrowserWindow({
-      width: 1000,
-      height: 700,
+      width,
+      height,
+      x,
+      y,
       show: false,
       autoHideMenuBar: true,
       parent: this.mainWindow,

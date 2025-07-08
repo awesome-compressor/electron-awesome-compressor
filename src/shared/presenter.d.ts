@@ -14,6 +14,23 @@ export interface PreviewData {
   }
 }
 
+export interface NodeCompressionResult {
+  tool: string
+  filePath: string
+  originalSize: number
+  compressedSize: number
+  compressionRatio: number
+  duration: number
+}
+
+export interface NodeCompressionStats {
+  bestTool: string
+  bestFilePath: string
+  compressionRatio: number
+  totalDuration: number
+  allResults: NodeCompressionResult[]
+}
+
 export interface IWindowPresenter {
   mainWindow: BrowserWindow | undefined
   previewWindows: BrowserWindow[]
@@ -42,7 +59,34 @@ export interface IProtocolPresenter {
   showInFolder(path: string): Promise<{ success: boolean; error?: string }>
 }
 
+export interface INodeCompressPresenter {
+  init(): Promise<void>
+  cleanup(): Promise<void>
+  compressImage(
+    imageBuffer: Buffer,
+    filename: string,
+    options?: {
+      quality?: number
+      maxWidth?: number
+      maxHeight?: number
+      preserveExif?: boolean
+    }
+  ): Promise<NodeCompressionStats>
+  compressImageFromPath(
+    inputPath: string,
+    options?: {
+      quality?: number
+      maxWidth?: number
+      maxHeight?: number
+      preserveExif?: boolean
+    }
+  ): Promise<NodeCompressionStats>
+  getTempDir(): string
+  cleanupTempFiles(olderThanHours?: number): Promise<void>
+}
+
 export interface IPresenter {
   windowPresenter: IWindowPresenter
   protocolPresenter: IProtocolPresenter
+  nodeCompressPresenter: INodeCompressPresenter
 }

@@ -13,6 +13,15 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
     },
   },
+  {
+    scheme: 'eacompressor-file',
+    privileges: {
+      standard: true,
+      secure: true,
+      allowServiceWorkers: true,
+      supportFetchAPI: true,
+    },
+  },
 ])
 
 // Configure app command line switches for performance optimization

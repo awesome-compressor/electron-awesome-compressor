@@ -43,7 +43,19 @@ export class ProtocolPresenter implements IProtocolPresenter {
       callback('Protocol handled successfully')
     })
 
+    // Register eacompressor-file:// protocol for accessing compressed files
+    protocol.registerFileProtocol('eacompressor-file', (request, callback) => {
+      const url = request.url.replace('eacompressor-file://', '')
+      const decodedPath = decodeURIComponent(url)
+
+      console.log(`Handling eacompressor-file protocol: ${decodedPath}`)
+
+      // Validate that the path is within the temp directory for security
+      this.validateAndRespondWithFile(decodedPath, callback)
+    })
+
     this.registeredProtocols.push('eacompressor')
+    this.registeredProtocols.push('eacompressor-file')
   }
 
   /**
@@ -112,6 +124,44 @@ export class ProtocolPresenter implements IProtocolPresenter {
 
     // Emit event to renderer to open settings
     this.notifyRenderer('protocol:settings', { section })
+  }
+
+  /**
+   * Validate file path and respond with file content for eacompressor-file protocol
+   */
+  private validateAndRespondWithFile(
+    filePath: string,
+    callback: (response: string | Electron.ProtocolResponse) => void
+  ): void {
+    try {
+      // Import presenter to access nodeCompressPresenter
+      import('./index').then(({ presenter }) => {
+        const tempDir = presenter.nodeCompressPresenter.getTempDir()
+
+        // Check if the file path is within the temp directory for security
+        if (!filePath.startsWith(tempDir)) {
+          console.warn(`Access denied to file outside temp directory: ${filePath}`)
+          callback({ statusCode: 403, data: 'Access denied' })
+          return
+        }
+
+        // Check if file exists
+        if (!existsSync(filePath)) {
+          console.warn(`File not found: ${filePath}`)
+          callback({ statusCode: 404, data: 'File not found' })
+          return
+        }
+
+        console.log(`Serving compressed file: ${filePath}`)
+        callback({ path: filePath })
+      }).catch(error => {
+        console.error('Error accessing presenter:', error)
+        callback({ statusCode: 500, data: 'Internal error' })
+      })
+    } catch (error) {
+      console.error('Error validating file path:', error)
+      callback({ statusCode: 500, data: 'Internal error' })
+    }
   }
 
     /**
@@ -193,12 +243,15 @@ export class ProtocolPresenter implements IProtocolPresenter {
     if (process.platform === 'win32') {
       // Windows
       app.setAsDefaultProtocolClient('eacompressor')
+      app.setAsDefaultProtocolClient('eacompressor-file')
     } else if (process.platform === 'darwin') {
       // macOS
       app.setAsDefaultProtocolClient('eacompressor')
+      app.setAsDefaultProtocolClient('eacompressor-file')
     } else {
       // Linux
       app.setAsDefaultProtocolClient('eacompressor')
+      app.setAsDefaultProtocolClient('eacompressor-file')
     }
   }
 

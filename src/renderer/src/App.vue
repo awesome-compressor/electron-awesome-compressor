@@ -43,12 +43,10 @@ interface CompressionResult {
 }
 
 // 响应式状态
-const loading = ref(false)
 const downloading = ref(false)
 const fileRef = ref()
 const isDragOver = ref(false)
 const currentImageIndex = ref(0)
-const isCompressingAll = ref(false)
 
 // 图片列表状态
 const imageItems = ref<ImageItem[]>([])
@@ -150,8 +148,6 @@ async function handleDrop(e: DragEvent): Promise<void>  {
   e.preventDefault()
   isDragOver.value = false
 
-  loading.value = true
-
   try {
     let files: File[] = []
 
@@ -221,8 +217,6 @@ async function handleDrop(e: DragEvent): Promise<void>  {
       message: 'Error processing files. Please try again.',
       type: 'error',
     })
-  } finally {
-    loading.value = false
   }
 }
 
@@ -434,8 +428,6 @@ async function compressImage(item: ImageItem): Promise<void> {
 
 // 批量压缩图片
 async function compressImages(items: ImageItem[] = imageItems.value): Promise<void> {
-  isCompressingAll.value = true
-
   try {
     // 并发压缩，但限制并发数量避免性能问题
     const batchSize = 3
@@ -443,8 +435,57 @@ async function compressImages(items: ImageItem[] = imageItems.value): Promise<vo
       const batch = items.slice(i, i + batchSize)
       await Promise.all(batch.map((item) => compressImage(item)))
     }
-  } finally {
-    isCompressingAll.value = false
+  } catch (error) {
+    console.error('Batch compression error:', error)
+  }
+}
+
+// Node压缩功能（不阻塞主流程）
+async function compressWithNode(item: ImageItem): Promise<void> {
+  if (!item.file) return
+
+  try {
+    // 将文件转换为Buffer
+    const arrayBuffer = await item.file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
+    // 调用node压缩presenter
+    const result = await window.electron.ipcRenderer.invoke(
+      'presenter:call',
+      'nodeCompressPresenter',
+      'compressImage',
+      buffer,
+      item.file.name,
+      {
+        quality: item.quality / 100,
+        preserveExif: false
+      }
+    )
+
+    if (result && !result.error) {
+      // 添加node压缩结果到已有结果中
+      const nodeResult = {
+        tool: `node-${result.bestTool}`,
+        compressedUrl: `eacompressor-file://${encodeURIComponent(result.bestFilePath)}`,
+        compressedSize: result.allResults[0]?.compressedSize || 0,
+        compressionRatio: result.compressionRatio,
+        blob: null, // Node结果不是blob
+        isBest: false
+      }
+
+      // 检查是否比现有结果更好
+      const currentBest = item.compressionResults.find(r => r.isBest)
+      if (!currentBest || nodeResult.compressionRatio > currentBest.compressionRatio) {
+        // 移除之前的最佳标记
+        item.compressionResults.forEach(r => r.isBest = false)
+        nodeResult.isBest = true
+      }
+
+      item.compressionResults.push(nodeResult)
+      console.log(`Node compression completed for ${item.file.name}: ${result.compressionRatio.toFixed(1)}%`)
+    }
+  } catch (error) {
+    console.error('Node compression error for', item.file.name, ':', error)
   }
 }
 
@@ -644,17 +685,7 @@ function setCurrentImage(index: number): void  {
       </div>
     </div>
 
-    <!-- Loading Overlay -->
-    <div v-show="loading || isCompressingAll" class="loading-overlay">
-      <div class="loading-spinner">
-        <el-icon class="is-loading" size="40px">
-          <Loading />
-        </el-icon>
-        <div class="loading-text">
-          {{ loading ? 'Loading images...' : 'Compressing images...' }}
-        </div>
-      </div>
-    </div>
+
 
     <!-- Background Elements -->
     <div class="bg-decoration">
@@ -1229,20 +1260,22 @@ function setCurrentImage(index: number): void  {
 
 /* 悬浮工具栏 */
 .floating-toolbar {
-  margin: auto;
+  margin: 10px auto;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
-  border-radius: 16px;
-  padding: 12px 16px;
+  border-radius: 12px;
+  padding: 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.12),
-    0 2px 8px rgba(0, 0, 0, 0.08);
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.04);
   display: flex;
   align-items: center;
-  gap: 12px;
-  max-width: 90vw;
+  gap: 8px;
+  max-width: 95vw;
   overflow: hidden;
+  /* 使工具栏更紧凑 */
+  flex-shrink: 0;
 }
 
 .toolbar-section {
@@ -1269,10 +1302,12 @@ function setCurrentImage(index: number): void  {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px;
-  gap: 20px;
-  min-height: calc(100vh - 160px);
+  padding: 10px 15px;
+  gap: 15px;
+  min-height: calc(100vh - 120px);
   overflow: visible;
+  /* 提高空间利用率 */
+  max-height: calc(100vh - 120px);
 }
 
 /* 文件信息区域 */
@@ -1979,11 +2014,12 @@ img-comparison-slider img {
 /* 图片网格 */
 .images-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px;
-  max-height: 280px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  max-height: calc(35vh);
+  min-height: 180px;
   overflow-y: auto;
-  padding: 10px;
+  padding: 8px;
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(10px);
   border-radius: 12px;
@@ -1991,6 +2027,8 @@ img-comparison-slider img {
   /* 自定义滚动条 */
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  /* 自适应高度 */
+  flex-shrink: 0;
 }
 
 .images-grid::-webkit-scrollbar {

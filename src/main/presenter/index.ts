@@ -1,16 +1,19 @@
 import { IPresenter } from '@shared/presenter'
 import { WindowPresenter } from './windowPresenter'
 import { ProtocolPresenter } from './protocolPresenter'
+import { NodeCompressPresenter } from './nodeCompressPresenter'
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
 
 export class Presenter implements IPresenter {
   windowPresenter: WindowPresenter
   protocolPresenter: ProtocolPresenter
+  nodeCompressPresenter: NodeCompressPresenter
 
   constructor() {
     console.log('Presenter constructor')
     this.windowPresenter = new WindowPresenter()
     this.protocolPresenter = new ProtocolPresenter()
+    this.nodeCompressPresenter = new NodeCompressPresenter()
   }
 
   /**
@@ -19,6 +22,7 @@ export class Presenter implements IPresenter {
   async init(): Promise<void> {
     console.log('Presenter init')
     await this.protocolPresenter.init()
+    await this.nodeCompressPresenter.init()
     await this.windowPresenter.init()
   }
 
@@ -29,6 +33,7 @@ export class Presenter implements IPresenter {
     console.log('Presenter cleanup')
     await this.windowPresenter.cleanup()
     await this.protocolPresenter.cleanup()
+    await this.nodeCompressPresenter.cleanup()
   }
 }
 
