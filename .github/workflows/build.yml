@@ -1,0 +1,138 @@
+name: Build Application
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: '选择构建平台'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+          - mac
+
+jobs:
+  build-windows:
+    if: github.event.inputs.platform == 'all' || contains(github.event.inputs.platform, 'windows')
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+        include:
+          - arch: x64
+            platform: win-x64
+          - arch: arm64
+            platform: win-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10.12.1
+
+      - name: Install dependencies
+        run: pnpm install
+        env:
+          npm_config_build_from_source: true
+          npm_config_platform: win32
+          npm_config_arch: ${{ matrix.arch }}
+
+      - name: Build Windows
+        run: pnpm run build:win:${{ matrix.arch }}
+        env:
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepchat-${{ matrix.platform }}
+          path: |
+            dist/*
+            !dist/win-unpacked
+            !dist/win-arm64-unpacked
+
+  build-linux:
+    if: github.event.inputs.platform == 'all' || contains(github.event.inputs.platform, 'linux')
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: [x64]
+        include:
+          - arch: x64
+            platform: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10.12.1
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build Linux
+        run: pnpm run build:linux:${{ matrix.arch }}
+        env:
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepchat-${{ matrix.platform }}
+          path: |
+            dist/*
+            !dist/linux-unpacked
+
+  build-mac:
+    if: github.event.inputs.platform == 'all' || contains(github.event.inputs.platform, 'mac')
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+        include:
+          - arch: x64
+            platform: mac-x64
+          - arch: arm64
+            platform: mac-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10.12.1
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build Mac
+        run: pnpm run build:mac:${{ matrix.arch }}
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepchat-${{ matrix.platform }}
+          path: |
+            dist/*
+            !dist/mac/*
+            !dist/mac-arm64/*
