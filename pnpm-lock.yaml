@@ -23,9 +23,6 @@ importers:
       jimp:
         specifier: ^1.6.0
         version: 1.6.0
-      js-base64:
-        specifier: ^3.7.7
-        version: 3.7.7
     devDependencies:
       '@antfu/eslint-config':
         specifier: ^4.16.1
@@ -3583,9 +3580,6 @@ packages:
     resolution: {integrity: sha512-8ecI4vXIV7eI2+nzRQsHAVaQVBGDotUY76CJZhlYaBAljBnK/509+sGGCs8eJyiS5N4tOcYZS+8Q4KgzorqlBA==, tarball: https://registry.npmjs.org/jpegtran-bin/-/jpegtran-bin-7.0.0.tgz}
     engines: {node: ^14.13.1 || >=16.0.0}
     hasBin: true
-
-  js-base64@3.7.7:
-    resolution: {integrity: sha512-7rCnleh0z2CkXhH67J8K1Ytz0b2Y+yxTPL+/KOJoa20hfnVQ/3/T6W/KflYI4bRHRagNeXeU2bkNGI3v1oS/lw==, tarball: https://registry.npmjs.org/js-base64/-/js-base64-3.7.7.tgz}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==, tarball: https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz}
@@ -9611,8 +9605,6 @@ snapshots:
     dependencies:
       bin-build: 3.0.0
       bin-wrapper: 4.1.0
-
-  js-base64@3.7.7: {}
 
   js-tokens@4.0.0: {}
 

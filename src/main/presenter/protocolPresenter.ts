@@ -175,30 +175,6 @@ export class ProtocolPresenter implements IProtocolPresenter {
     }
   }
 
-  /**
-   * Validate file path and respond with file content for eacompressor-file protocol
-   */
-  private validateAndRespondWithFile(
-    filePath: string,
-    callback: (response: string | Electron.ProtocolResponse) => void
-  ): void {
-    try {
-      console.log(`[Protocol] Validating file path: ${filePath}`)
-
-      // Check if file exists
-      if (!existsSync(filePath)) {
-        console.warn(`[Protocol] File not found: ${filePath}`)
-        callback({ statusCode: 404, data: 'File not found' })
-        return
-      }
-
-      console.log(`[Protocol] Serving compressed file: ${filePath}`)
-      callback({ path: filePath })
-    } catch (error) {
-      console.error('[Protocol] Error validating file path:', error)
-      callback({ statusCode: 500, data: 'Internal error' })
-    }
-  }
 
   /**
    * Setup external link handlers

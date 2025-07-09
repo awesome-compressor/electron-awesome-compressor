@@ -42,9 +42,9 @@ export class WindowPresenter implements IWindowPresenter {
     const primaryDisplay = screen.getPrimaryDisplay()
     const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
-    // Preview window should be smaller, about 50% of screen width and 60% of screen height
-    const width = Math.min(Math.max(Math.floor(screenWidth * 0.5), 600), 1000)
-    const height = Math.min(Math.max(Math.floor(screenHeight * 0.6), 500), 800)
+    // Preview window should be larger for better image comparison - 70% of screen width and 80% of screen height
+    const width = Math.min(Math.max(Math.floor(screenWidth * 0.7), 800), 1400)
+    const height = Math.min(Math.max(Math.floor(screenHeight * 0.8), 600), 1000)
 
     // Position to the right side if main window exists
     let x = Math.floor((screenWidth - width) / 2)
