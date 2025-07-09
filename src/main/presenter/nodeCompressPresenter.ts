@@ -342,36 +342,55 @@ export class NodeCompressPresenter {
       console.log(`Best tool: ${stats.bestTool}`)
       console.log(`Compression ratio: ${stats.compressionRatio.toFixed(1)}%`)
 
-      // Save the compressed file and get file ID
-      const outputFilename = this.generateOutputFilename(filename, stats.bestTool)
-      const outputPath = join(this.tempDir, outputFilename)
+      // Save compressed files for all results and build result array
+      const allResults: NodeCompressionResult[] = []
+
+      // Save the best result first
+      const bestOutputFilename = this.generateOutputFilename(filename, stats.bestTool)
+      const bestOutputPath = join(this.tempDir, bestOutputFilename)
       
       // Convert Uint8Array back to Buffer for file writing
       const compressedBufferNode = Buffer.from(compressedBuffer)
-      await fs.writeFile(outputPath, compressedBufferNode)
+      await fs.writeFile(bestOutputPath, compressedBufferNode)
 
-      // Store file and get ID
-      const fileId = this.storeFile(
-        outputPath,
+      // Store best file and get ID
+      const bestFileId = this.storeFile(
+        bestOutputPath,
         filename,
         stats.bestTool,
         imageBuffer.length,
         compressedBufferNode.length
       )
 
-      // Build result with file ID
-      const allResults: NodeCompressionResult[] = [{
-        tool: stats.bestTool,
-        fileId,
-        originalSize: imageBuffer.length,
-        compressedSize: compressedBufferNode.length,
-        compressionRatio: stats.compressionRatio,
-        duration: stats.totalDuration
-      }]
+      // Process all compression results
+      for (const result of stats.allResults) {
+        if (result.tool === stats.bestTool) {
+          // Use the already saved best result
+          allResults.push({
+            tool: result.tool,
+            fileId: bestFileId,
+            originalSize: result.originalSize,
+            compressedSize: result.compressedSize,
+            compressionRatio: result.compressionRatio,
+            duration: result.duration
+          })
+        } else {
+          // For other tools, we would need their buffers to save them
+          // For now, just add the stats without file storage
+          allResults.push({
+            tool: result.tool,
+            fileId: '', // No file saved for non-best results
+            originalSize: result.originalSize,
+            compressedSize: result.compressedSize,
+            compressionRatio: result.compressionRatio,
+            duration: result.duration
+          })
+        }
+      }
 
       return {
         bestTool: stats.bestTool,
-        bestFileId: fileId,
+        bestFileId,
         compressionRatio: stats.compressionRatio,
         totalDuration: stats.totalDuration,
         allResults

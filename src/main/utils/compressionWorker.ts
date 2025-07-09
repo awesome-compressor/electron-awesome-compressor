@@ -1,4 +1,4 @@
-import { compress, compressWithStats } from '@awesome-compressor/node-image-compression'
+import { compress } from '@awesome-compressor/node-image-compression'
 
 // Message types for worker communication
 interface CompressionRequest {
@@ -79,30 +79,49 @@ class CompressionWorker {
         type: 'buffer' as const
       }
 
-      // Get stats and compressed data
-      const [stats, compressedBuffer] = await Promise.all([
-        compressWithStats(imageBuffer, { ...compressOptions, returnAllResults: true }),
-        compress(imageBuffer, { ...compressOptions, returnAllResults: true })
-      ])
+      // Get compression results for all tools
+      const compressResults = await compress(imageBuffer, { ...compressOptions, returnAllResults: true })
 
-      console.log(`[CompressionWorker] Compression completed in ${stats.totalDuration}ms`)
-      console.log(`[CompressionWorker] Best tool: ${stats.bestTool}`)
-      console.log(`[CompressionWorker] Compression ratio: ${stats.compressionRatio.toFixed(1)}%`)
+      console.log(`[CompressionWorker] Compression completed in ${compressResults.totalDuration}ms`)
+      console.log(`[CompressionWorker] Results:`, compressResults.allResults.map(r => 
+        `${r.tool}: ${(r.compressionRatio * 100).toFixed(1)}% reduction, ${r.duration}ms`
+      ))
 
-      if (!compressedBuffer || !Buffer.isBuffer(compressedBuffer)) {
+      if (!compressResults || !compressResults.bestResult) {
+        throw new Error('Compression failed: no valid results returned')
+      }
+
+      const bestResult = compressResults.bestResult
+      const bestTool = compressResults.bestTool
+
+      if (!bestResult || !Buffer.isBuffer(bestResult)) {
         throw new Error('Compression failed: no valid buffer returned')
       }
 
+      console.log(`[CompressionWorker] Best tool: ${bestTool}`)
+
+      // Calculate best compression ratio from allResults
+      const bestResultStats = compressResults.allResults.find(r => r.tool === bestTool)
+      const bestCompressionRatio = bestResultStats ? bestResultStats.compressionRatio : 0
+
+      console.log(`[CompressionWorker] Best compression ratio: ${(bestCompressionRatio * 100).toFixed(1)}%`)
+
       // Convert Buffer back to Uint8Array for transfer
-      const compressedUint8Array = new Uint8Array(compressedBuffer)
+      const compressedUint8Array = new Uint8Array(bestResult)
 
       return {
         compressedBuffer: compressedUint8Array,
         stats: {
-          bestTool: stats.bestTool,
-          compressionRatio: stats.compressionRatio,
-          totalDuration: stats.totalDuration,
-          allResults: compressedBuffer.allResults
+          bestTool,
+          compressionRatio: bestCompressionRatio * 100, // Convert to percentage
+          totalDuration: compressResults.totalDuration,
+          allResults: compressResults.allResults.map(result => ({
+            tool: result.tool,
+            originalSize: result.originalSize,
+            compressedSize: result.compressedSize,
+            compressionRatio: result.compressionRatio * 100, // Convert to percentage
+            duration: result.duration
+          }))
         }
       }
     } catch (error) {
