@@ -1,7 +1,7 @@
-import { app } from 'electron'
+import { app, utilityProcess, MessageChannelMain, MessagePortMain } from 'electron'
 import { promises as fs } from 'fs'
 import { join } from 'path'
-import { compress, compressWithStats } from '@awesome-compressor/node-image-compression'
+import compressionWorkerPath from '../utils/compressionWorker?modulePath'
 
 // File storage entry interface
 interface StoredFileEntry {
@@ -12,6 +12,43 @@ interface StoredFileEntry {
   createdAt: number
   originalSize: number
   compressedSize: number
+}
+
+// Message types for worker communication
+interface CompressionRequest {
+  type: 'compress'
+  data: {
+    imageBytes: Uint8Array
+    filename: string
+    options: {
+      quality?: number
+      maxWidth?: number
+      maxHeight?: number
+      preserveExif?: boolean
+    }
+  }
+  requestId: string
+}
+
+interface CompressionResponse {
+  type: 'compress-success' | 'compress-error'
+  requestId: string
+  data?: {
+    compressedBuffer: Uint8Array
+    stats: {
+      bestTool: string
+      compressionRatio: number
+      totalDuration: number
+      allResults: Array<{
+        tool: string
+        originalSize: number
+        compressedSize: number
+        compressionRatio: number
+        duration: number
+      }>
+    }
+  }
+  error?: string
 }
 
 // Compression result interface - now returns ID instead of file path
@@ -36,6 +73,14 @@ export interface NodeCompressionStats {
 export class NodeCompressPresenter {
   private tempDir: string
   private fileStorage: Map<string, StoredFileEntry> = new Map()
+  private worker: Electron.UtilityProcess | null = null
+  private workerPort: MessagePortMain | null = null
+  private pendingRequests: Map<string, {
+    resolve: (value: any) => void
+    reject: (error: Error) => void
+  }> = new Map()
+  private requestIdCounter = 0
+  private workerInitialized = false
 
   constructor() {
     console.log('NodeCompressPresenter constructor')
@@ -47,8 +92,12 @@ export class NodeCompressPresenter {
    */
   async init(): Promise<void> {
     console.log('NodeCompressPresenter init')
+    
     // Ensure temp directory exists
     await this.ensureTempDir()
+    
+    // Initialize compression worker
+    await this.initCompressionWorker()
   }
 
   /**
@@ -64,6 +113,115 @@ export class NodeCompressPresenter {
       console.error('Error creating temp directory:', error)
       throw new Error('Failed to initialize temp directory')
     }
+  }
+
+  /**
+   * Initialize compression worker process
+   */
+  private async initCompressionWorker(): Promise<void> {
+    if (this.workerInitialized) {
+      return
+    }
+
+    try {
+      // Create message channel
+      const { port1, port2 } = new MessageChannelMain()
+      
+      // Fork utility process
+      this.worker = utilityProcess.fork(compressionWorkerPath)
+      
+      // Send port to worker
+      this.worker.postMessage({ message: 'init' }, [port1])
+      
+      // Setup communication
+      this.workerPort = port2
+      this.setupWorkerCommunication()
+      
+      // Wait for worker to be ready
+      await this.waitForWorkerReady()
+      
+      this.workerInitialized = true
+      console.log('Compression worker initialized')
+    } catch (error) {
+      console.error('Failed to initialize compression worker:', error)
+      throw error
+    }
+  }
+
+  private setupWorkerCommunication(): void {
+    if (!this.workerPort) return
+
+    this.workerPort.on('message', (e) => {
+      const response = e.data as CompressionResponse | { type: 'ready' }
+      
+      if (response.type === 'ready') {
+        // Worker is ready
+        return
+      }
+      
+      const workerResponse = response as CompressionResponse
+      const pendingRequest = this.pendingRequests.get(workerResponse.requestId)
+      
+      if (pendingRequest) {
+        this.pendingRequests.delete(workerResponse.requestId)
+        
+        if (workerResponse.type === 'compress-error') {
+          pendingRequest.reject(new Error(workerResponse.error || 'Unknown error'))
+        } else {
+          pendingRequest.resolve(workerResponse)
+        }
+      }
+    })
+
+    this.workerPort.start()
+  }
+
+  private waitForWorkerReady(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.workerPort) {
+        reject(new Error('Worker port not initialized'))
+        return
+      }
+
+      const timeout = setTimeout(() => {
+        reject(new Error('Worker ready timeout'))
+      }, 10000) // 10 second timeout
+
+      const onMessage = (e: any) => {
+        if (e.data?.type === 'ready') {
+          clearTimeout(timeout)
+          this.workerPort?.removeListener('message', onMessage)
+          resolve()
+        }
+      }
+
+      this.workerPort.on('message', onMessage)
+    })
+  }
+
+  private generateRequestId(): string {
+    return `req_${++this.requestIdCounter}_${Date.now()}`
+  }
+
+  private sendToWorker(request: CompressionRequest): Promise<CompressionResponse> {
+    return new Promise((resolve, reject) => {
+      if (!this.workerPort) {
+        reject(new Error('Worker not initialized'))
+        return
+      }
+
+      this.pendingRequests.set(request.requestId, { resolve, reject })
+      
+      // Add timeout for requests
+      setTimeout(() => {
+        if (this.pendingRequests.has(request.requestId)) {
+          this.pendingRequests.delete(request.requestId)
+          reject(new Error(`Request timeout: ${request.type}`))
+        }
+      }, 60000) // 60 second timeout
+
+      this.workerPort.postMessage(request)
+    })
   }
 
   /**
@@ -105,6 +263,22 @@ export class NodeCompressPresenter {
   }
 
   /**
+   * Generate output filename with tool suffix
+   */
+  private generateOutputFilename(originalFilename: string, tool: string): string {
+    const timestamp = Date.now()
+    const lastDotIndex = originalFilename.lastIndexOf('.')
+
+    if (lastDotIndex > 0) {
+      const nameWithoutExt = originalFilename.substring(0, lastDotIndex)
+      const extension = originalFilename.substring(lastDotIndex)
+      return `${nameWithoutExt}_${tool}_${timestamp}${extension}`
+    } else {
+      return `${originalFilename}_${tool}_${timestamp}`
+    }
+  }
+
+  /**
    * Get file path by ID (for protocol handler)
    */
   getFilePathById(fileId: string): string | null {
@@ -125,7 +299,7 @@ export class NodeCompressPresenter {
   }
 
   /**
-   * Compress image using node-image-compression with all available tools
+   * Compress image using utility process for compression and main process for file management
    */
   async compressImage(
     imageBuffer: Buffer,
@@ -137,61 +311,67 @@ export class NodeCompressPresenter {
       preserveExif?: boolean
     } = {}
   ): Promise<NodeCompressionStats> {
+    if (!this.workerInitialized) {
+      throw new Error('Compression worker not initialized')
+    }
+
     try {
       console.log(`Starting node compression for: ${filename}`)
 
-      // Default compression options
-      const compressOptions = {
-        quality: options.quality || 0.6,
-        maxWidth: options.maxWidth,
-        maxHeight: options.maxHeight,
-        preserveExif: options.preserveExif || false,
-        type: 'buffer' as const
+      // Convert Buffer to Uint8Array for transfer to worker
+      const imageBytes = new Uint8Array(imageBuffer)
+
+      // Send compression request to worker
+      const response = await this.sendToWorker({
+        type: 'compress',
+        requestId: this.generateRequestId(),
+        data: {
+          imageBytes,
+          filename,
+          options
+        }
+      })
+
+      if (!response.data) {
+        throw new Error('No compression data received from worker')
       }
 
-      // Get stats and compressed data
-      const [stats, compressedBuffer] = await Promise.all([
-        compressWithStats(imageBuffer, { ...compressOptions, returnAllResults: true }),
-        compress(imageBuffer, compressOptions)
-      ])
-
+      const { compressedBuffer, stats } = response.data
+      
       console.log(`Node compression completed in ${stats.totalDuration}ms`)
       console.log(`Best tool: ${stats.bestTool}`)
       console.log(`Compression ratio: ${stats.compressionRatio.toFixed(1)}%`)
 
-      // Save the best compression result
-      const allResults: NodeCompressionResult[] = []
-      let bestFileId = ''
+      // Save the compressed file and get file ID
+      const outputFilename = this.generateOutputFilename(filename, stats.bestTool)
+      const outputPath = join(this.tempDir, outputFilename)
+      
+      // Convert Uint8Array back to Buffer for file writing
+      const compressedBufferNode = Buffer.from(compressedBuffer)
+      await fs.writeFile(outputPath, compressedBufferNode)
 
-      if (compressedBuffer && Buffer.isBuffer(compressedBuffer)) {
-        const outputFilename = this.generateOutputFilename(filename, stats.bestTool)
-        const outputPath = join(this.tempDir, outputFilename)
+      // Store file and get ID
+      const fileId = this.storeFile(
+        outputPath,
+        filename,
+        stats.bestTool,
+        imageBuffer.length,
+        compressedBufferNode.length
+      )
 
-        await fs.writeFile(outputPath, compressedBuffer)
-
-        // Store file and get ID
-        const fileId = this.storeFile(
-          outputPath,
-          filename,
-          stats.bestTool,
-          imageBuffer.length,
-          compressedBuffer.length
-        )
-        bestFileId = fileId
-
-        allResults.push({
-          tool: stats.bestTool,
-          fileId, // Use fileId instead of filePath
-          originalSize: imageBuffer.length,
-          compressedSize: compressedBuffer.length,
-          compressionRatio: stats.compressionRatio,
-          duration: stats.totalDuration
-        })
-      }
+      // Build result with file ID
+      const allResults: NodeCompressionResult[] = [{
+        tool: stats.bestTool,
+        fileId,
+        originalSize: imageBuffer.length,
+        compressedSize: compressedBufferNode.length,
+        compressionRatio: stats.compressionRatio,
+        duration: stats.totalDuration
+      }]
 
       return {
         bestTool: stats.bestTool,
-        bestFileId, // Use bestFileId instead of bestFilePath
+        bestFileId: fileId,
         compressionRatio: stats.compressionRatio,
         totalDuration: stats.totalDuration,
         allResults
@@ -284,22 +464,6 @@ export class NodeCompressPresenter {
   }
 
   /**
-   * Generate output filename with tool suffix
-   */
-  private generateOutputFilename(originalFilename: string, tool: string): string {
-    const timestamp = Date.now()
-    const lastDotIndex = originalFilename.lastIndexOf('.')
-
-    if (lastDotIndex > 0) {
-      const nameWithoutExt = originalFilename.substring(0, lastDotIndex)
-      const extension = originalFilename.substring(lastDotIndex)
-      return `${nameWithoutExt}_${tool}_${timestamp}${extension}`
-    } else {
-      return `${originalFilename}_${tool}_${timestamp}`
-    }
-  }
-
-  /**
    * Clean up old temp files and memory storage (optional maintenance)
    */
   async cleanupTempFiles(olderThanHours: number = 24): Promise<void> {
@@ -372,10 +536,36 @@ export class NodeCompressPresenter {
    */
   async cleanup(): Promise<void> {
     console.log('NodeCompressPresenter cleanup')
-    // Optionally clean up temp files on shutdown
-    await this.cleanupTempFiles(0) // Clean up all files
-    // Clear memory storage
-    this.fileStorage.clear()
-    console.log('Cleared all file storage')
+    
+    try {
+      // Clean up all files
+      await this.cleanupTempFiles(0)
+      
+      // Clear pending requests
+      for (const [, request] of this.pendingRequests.entries()) {
+        request.reject(new Error('Presenter cleanup'))
+      }
+      this.pendingRequests.clear()
+      
+      // Close worker port
+      if (this.workerPort) {
+        this.workerPort.close()
+        this.workerPort = null
+      }
+      
+      // Terminate worker process
+      if (this.worker) {
+        this.worker.kill()
+        this.worker = null
+      }
+      
+      // Clear memory storage
+      this.fileStorage.clear()
+      
+      this.workerInitialized = false
+      console.log('NodeCompressPresenter cleanup completed')
+    } catch (error) {
+      console.warn('Error during NodeCompressPresenter cleanup:', error)
+    }
   }
 }
