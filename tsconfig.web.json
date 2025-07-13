@@ -7,6 +7,9 @@
     "src/preload/*.d.ts",
     "src/shared/**/*"
   ],
+  "exclude": [
+    "src/renderer/src/**/App_backup*.vue"
+  ],
   "compilerOptions": {
     "composite": true,
     "baseUrl": ".",
