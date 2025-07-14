@@ -693,6 +693,18 @@ function selectCompressionResult(item: ImageItem, resultId: string): void {
     result.isSelected = result.id === resultId
   })
   item.selectedResultId = resultId
+
+  // Force update the comparison slider by triggering a re-render
+  nextTick(() => {
+    const slider = document.querySelector('img-comparison-slider')
+    if (slider) {
+      // Reset the slider value to ensure proper re-rendering
+      slider.setAttribute('value', '50')
+      // Trigger a custom event to force re-evaluation
+      const event = new CustomEvent('input', { bubbles: true })
+      slider.dispatchEvent(event)
+    }
+  })
 }
 
 function deleteImage(index: number): void {
@@ -1242,6 +1254,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
             <div class="comparison-container-fullscreen" :style="{ cursor: imageZoom > 1 ? 'move' : 'default' }"
               @wheel="handleWheel" @mousedown="handleImageMouseDown">
               <img-comparison-slider v-if="currentImage.originalUrl && selectedResult && selectedResult.url"
+                :key="`${currentImage.id}-${selectedResult.id}`"
                 class="comparison-slider-fullscreen" value="50">
                 <!-- eslint-disable -->
                 <img slot="first" :src="currentImage.originalUrl" alt="Original Image"
@@ -1494,6 +1507,19 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   padding: 16px;
 }
 
+/* Main Content Responsive */
+@media (max-width: 768px) {
+  .main-content {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 4px;
+  }
+}
+
 /* Settings Section */
 .settings-section-main {
   display: flex;
@@ -1584,9 +1610,9 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
 /* Floating Toolbar */
 .floating-toolbar {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 20px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px;
   margin: 0 auto 16px;
   background: white;
   border-radius: 16px;
@@ -1596,10 +1622,260 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   z-index: 10;
 }
 
+/* Large screen optimization */
+@media (min-width: 1200px) {
+  .floating-toolbar {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+  }
+
+  .toolbar-row {
+    align-items: center;
+    gap: 16px;
+    flex-wrap: nowrap;
+  }
+
+  .secondary-row {
+    padding-top: 0;
+    border-top: none;
+    border-left: 1px solid #f1f5f9;
+    padding-left: 16px;
+    margin-left: 8px;
+  }
+}
+
+/* Medium screen optimization */
+@media (min-width: 769px) and (max-width: 1199px) {
+  .floating-toolbar {
+    gap: 12px;
+    padding: 14px 18px;
+    max-width: 90%;
+  }
+
+  .toolbar-row {
+    gap: 12px;
+    justify-content: center;
+  }
+
+  .toolbar-section {
+    gap: 10px;
+  }
+
+  .quality-control {
+    width: 180px;
+    min-width: 160px;
+  }
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.primary-row {
+  min-height: 40px;
+}
+
+.secondary-row {
+  padding-top: 4px;
+  border-top: 1px solid #f1f5f9;
+}
+
 .toolbar-section {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Responsive visibility classes */
+.hide-mobile {
+  display: block;
+}
+
+.show-mobile {
+  display: none;
+}
+
+.hide-small {
+  display: inline;
+}
+
+.show-small {
+  display: none;
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .floating-toolbar {
+    padding: 12px 16px;
+    max-width: 98%;
+    align-items: center;
+  }
+
+  .toolbar-row {
+    gap: 8px;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .toolbar-section {
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .hide-mobile {
+    display: none;
+  }
+
+  .show-mobile {
+    display: block;
+  }
+
+  .secondary-row {
+    justify-content: center;
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .options-section {
+    flex-direction: row;
+    gap: 16px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .quality-control {
+    width: 220px;
+    max-width: 250px;
+    min-width: 180px;
+  }
+
+  .exif-option {
+    flex-shrink: 0;
+  }
+}
+
+/* Small screen styles */
+@media (max-width: 640px) {
+  .hide-small {
+    display: none;
+  }
+
+  .show-small {
+    display: inline;
+  }
+
+  .primary-row {
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+    width: 100%;
+  }
+
+  .files-section {
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .files-info {
+    justify-content: center;
+    flex: 1;
+  }
+
+  .action-buttons {
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .stats-section {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .stats-info {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .download-section {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .download-btn-new {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .toolbar-divider {
+    display: none !important;
+  }
+
+  .secondary-row {
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .options-section {
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    align-items: center;
+  }
+
+  .quality-control {
+    width: 100%;
+    max-width: 280px;
+  }
+}
+
+/* Very small screen styles */
+@media (max-width: 480px) {
+  .floating-toolbar {
+    padding: 8px 12px;
+    margin: 0 8px 16px;
+  }
+
+  .action-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .btn-icon {
+    font-size: 14px;
+  }
+
+  .files-count {
+    font-size: 13px;
+  }
+
+  .size-label-mobile {
+    font-size: 12px;
+  }
+
+  .saved-mini {
+    font-size: 12px;
+    padding: 2px 6px;
+  }
+
+  .quality-control {
+    width: 100%;
+    max-width: 200px;
+  }
+
+  .download-btn-new {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
 }
 
 .files-info {
@@ -1608,6 +1884,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   gap: 8px;
   font-size: 14px;
   font-weight: 500;
+  flex-wrap: wrap;
 }
 
 .files-icon {
@@ -1617,6 +1894,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
 .compressed-count {
   color: #718096;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .action-buttons {
@@ -1664,10 +1942,19 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   align-items: center;
   gap: 12px;
   font-size: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .size-label {
   color: #4a5568;
+  white-space: nowrap;
+}
+
+.size-label-mobile {
+  color: #4a5568;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .saved-mini {
@@ -1688,6 +1975,8 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   display: flex;
   align-items: center;
   gap: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .exif-option .exif-label {
@@ -1698,6 +1987,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
 
 .quality-control {
   width: 200px;
+  min-width: 180px;
 }
 
 .global-quality-header {
@@ -1796,6 +2086,39 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   display: flex;
   gap: 16px;
   overflow: hidden;
+}
+
+/* Images Section Responsive */
+@media (max-width: 1024px) {
+  .images-section {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .images-grid {
+    width: 100%;
+    min-width: unset;
+    max-height: 300px;
+    overflow-y: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .image-card {
+    min-width: 280px;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .images-grid {
+    max-height: 250px;
+  }
+
+  .image-card {
+    min-width: 250px;
+  }
 }
 
 .images-grid {
@@ -2230,17 +2553,25 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .image-title {
   font-size: 16px;
   font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .image-controls {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .zoom-info {
@@ -2256,6 +2587,71 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   opacity: 0.8;
   display: flex;
   gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Image overlay responsive */
+@media (max-width: 768px) {
+  .image-overlay-info {
+    padding: 8px 16px;
+  }
+
+  .overlay-header {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .image-title {
+    font-size: 14px;
+    text-align: center;
+  }
+
+  .image-controls {
+    gap: 6px;
+  }
+
+  .image-controls .el-button {
+    padding: 4px;
+  }
+
+  .zoom-info {
+    font-size: 12px;
+    min-width: 35px;
+  }
+
+  .image-details {
+    font-size: 12px;
+    gap: 8px;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .image-overlay-info {
+    padding: 6px 12px;
+  }
+
+  .image-title {
+    font-size: 13px;
+  }
+
+  .image-controls .el-button {
+    width: 28px;
+    height: 28px;
+  }
+
+  .zoom-info {
+    font-size: 11px;
+    min-width: 30px;
+  }
+
+  .image-details {
+    font-size: 11px;
+    gap: 6px;
+  }
 }
 
 .savings {
