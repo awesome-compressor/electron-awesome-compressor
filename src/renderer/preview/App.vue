@@ -1,5 +1,5 @@
 <template>
-  <div class="preview-container" :class="{ 'fullscreen': isFullscreen }">
+  <div class="preview-container" :class="{ fullscreen: isFullscreen }">
     <!-- Loading state -->
     <div v-if="!previewData" class="loading-state">
       <el-icon class="is-loading" size="40px">
@@ -33,10 +33,7 @@
       </div>
 
       <!-- Image comparison area -->
-      <div class="comparison-container" 
-           @mousemove="handleMouseMove"
-           @mouseleave="handleMouseLeave">
-        
+      <div class="comparison-container" @mousemove="handleMouseMove" @mouseleave="handleMouseLeave">
         <!-- Slider comparison mode -->
         <div v-if="currentMode === 'slider'" class="comparison-mode slider-mode">
           <img-comparison-slider
@@ -44,24 +41,26 @@
             class="comparison-slider"
             value="50"
           >
-            <img
-              slot="first"
-              :src="previewData.originalImage.url"
-              alt="Original Image"
-              class="comparison-image"
-              loading="eager"
-              decoding="sync"
-              @load="optimizeImageRendering"
-            />
-            <img
-              slot="second"
-              :src="previewData.compressedImage.url"
-              alt="Compressed Image"
-              class="comparison-image"
-              loading="eager"
-              decoding="sync"
-              @load="optimizeImageRendering"
-            />
+            <template #first>
+              <img
+                :src="previewData.originalImage.url"
+                alt="Original Image"
+                class="comparison-image"
+                loading="eager"
+                decoding="sync"
+                @load="optimizeImageRendering"
+              />
+            </template>
+            <template #second>
+              <img
+                :src="previewData.compressedImage.url"
+                alt="Compressed Image"
+                class="comparison-image"
+                loading="eager"
+                decoding="sync"
+                @load="optimizeImageRendering"
+              />
+            </template>
           </img-comparison-slider>
         </div>
 
@@ -93,7 +92,11 @@
         <div v-else-if="currentMode === 'toggle'" class="comparison-mode toggle-mode">
           <div class="image-container">
             <img
-              :src="showOriginalInToggle ? previewData.originalImage.url : previewData.compressedImage.url"
+              :src="
+                showOriginalInToggle
+                  ? previewData.originalImage.url
+                  : previewData.compressedImage.url
+              "
               :alt="showOriginalInToggle ? 'Original Image' : 'Compressed Image'"
               class="comparison-image"
               :style="getImageStyle()"
@@ -124,11 +127,11 @@
             />
             <div class="overlay-controls">
               <input
+                v-model.number="overlayOpacity"
                 type="range"
                 min="0"
                 max="1"
                 step="0.1"
-                v-model.number="overlayOpacity"
                 class="opacity-slider"
               />
               <span class="opacity-label">Overlay: {{ Math.round(overlayOpacity * 100) }}%</span>
@@ -137,34 +140,52 @@
         </div>
 
         <!-- Zoom and pan controls -->
-        <div v-if="zoomLevel > 1" class="zoom-info">
-          Zoom: {{ Math.round(zoomLevel * 100) }}%
-        </div>
+        <div v-if="zoomLevel > 1" class="zoom-info">Zoom: {{ Math.round(zoomLevel * 100) }}%</div>
       </div>
 
       <!-- Bottom toolbar -->
       <div class="bottom-toolbar" :class="{ 'toolbar-hidden': isFullscreen && !showControls }">
         <div class="toolbar-content">
           <div class="toolbar-left">
-            <button class="tool-btn compact" @click="toggleComparisonMode" :title="getComparisonModeTitle()">
+            <button
+              class="tool-btn compact"
+              :title="getComparisonModeTitle()"
+              @click="toggleComparisonMode"
+            >
               <el-icon><component :is="getComparisonModeIcon()" /></el-icon>
               <span class="btn-text">{{ getComparisonModeText() }}</span>
             </button>
-            <button class="tool-btn compact" @click="toggleFullscreen" :title="isFullscreen ? 'Exit Fullscreen (ESC)' : 'Enter Fullscreen (F11)'">
+            <button
+              class="tool-btn compact"
+              :title="isFullscreen ? 'Exit Fullscreen (ESC)' : 'Enter Fullscreen (F11)'"
+              @click="toggleFullscreen"
+            >
               <el-icon><component :is="isFullscreen ? 'SemiSelect' : 'FullScreen'" /></el-icon>
               <span class="btn-text">{{ isFullscreen ? 'Exit' : 'Full' }}</span>
             </button>
           </div>
           <div class="toolbar-right">
-            <button class="tool-btn compact" @click="showHelp = !showHelp" :title="'Show/Hide Help (H)'">
+            <button
+              class="tool-btn compact"
+              :title="'Show/Hide Help (H)'"
+              @click="showHelp = !showHelp"
+            >
               <el-icon><QuestionFilled /></el-icon>
               <span class="btn-text">Help</span>
             </button>
-            <button class="tool-btn compact" @click="downloadCompressed" :title="'Download Compressed Image'">
+            <button
+              class="tool-btn compact"
+              :title="'Download Compressed Image'"
+              @click="downloadCompressed"
+            >
               <el-icon><Download /></el-icon>
               <span class="btn-text">Save</span>
             </button>
-            <button class="tool-btn compact close-btn" @click="closeWindow" :title="'Close Window (ESC)'">
+            <button
+              class="tool-btn compact close-btn"
+              :title="'Close Window (ESC)'"
+              @click="closeWindow"
+            >
               <el-icon><Close /></el-icon>
               <span class="btn-text">Close</span>
             </button>
@@ -213,7 +234,7 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElIcon, ElMessage } from 'element-plus'
-import { Loading, Download, CloseBold, FullScreen, Rank, Grid, View, Monitor, Document, SemiSelect, QuestionFilled, Close } from '@element-plus/icons-vue'
+import { Loading, Download, QuestionFilled, Close } from '@element-plus/icons-vue'
 import { download } from 'lazy-js-utils'
 import 'img-comparison-slider/dist/styles.css'
 
@@ -249,7 +270,7 @@ const panY = ref(0)
 const isDragging = ref(false)
 const lastMouseX = ref(0)
 const lastMouseY = ref(0)
-const controlsTimeout = ref<NodeJS.Timeout | null>(null)
+const controlsTimeout = ref<number | null>(null)
 
 // 对比模式配置
 const comparisonModes = ['slider', 'sideBySide', 'toggle', 'overlay'] as const
@@ -270,7 +291,7 @@ onMounted(() => {
   window.addEventListener('mousedown', handleMouseDown)
   window.addEventListener('mousemove', handleMouseMove)
   window.addEventListener('mouseup', handleMouseUp)
-  
+
   // 添加全屏状态监听
   window.addEventListener('fullscreenchange', handleFullscreenChange)
 })
@@ -280,14 +301,14 @@ onUnmounted(() => {
   if (window.electron && window.electron.ipcRenderer) {
     window.electron.ipcRenderer.removeAllListeners('preview-data')
   }
-  
+
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('wheel', handleWheel)
   window.removeEventListener('mousedown', handleMouseDown)
   window.removeEventListener('mousemove', handleMouseMove)
   window.removeEventListener('mouseup', handleMouseUp)
   window.removeEventListener('fullscreenchange', handleFullscreenChange)
-  
+
   if (controlsTimeout.value) {
     clearTimeout(controlsTimeout.value)
   }
@@ -361,14 +382,14 @@ function handleMouseMove(event: MouseEvent): void {
   if (isDragging.value) {
     const deltaX = event.clientX - lastMouseX.value
     const deltaY = event.clientY - lastMouseY.value
-    
+
     panX.value += deltaX
     panY.value += deltaY
-    
+
     lastMouseX.value = event.clientX
     lastMouseY.value = event.clientY
   }
-  
+
   // 显示控制栏
   if (isFullscreen.value) {
     showControls.value = true
@@ -796,24 +817,24 @@ function closeWindow(): void {
   .bottom-toolbar {
     padding: 8px 12px;
   }
-  
+
   .toolbar-content {
     flex-direction: column;
     gap: 8px;
   }
-  
+
   .toolbar-left,
   .toolbar-right {
     width: 100%;
     justify-content: center;
   }
-  
+
   .tool-btn.compact {
     min-width: 50px;
     padding: 4px 8px;
     font-size: 11px;
   }
-  
+
   .btn-text {
     display: none;
   }

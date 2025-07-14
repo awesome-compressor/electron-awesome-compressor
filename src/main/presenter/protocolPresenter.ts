@@ -175,7 +175,6 @@ export class ProtocolPresenter implements IProtocolPresenter {
     }
   }
 
-
   /**
    * Setup external link handlers
    */

@@ -13,7 +13,7 @@ import {
   Setting,
   Key,
   Plus,
-  Delete,
+  Delete
 } from '@element-plus/icons-vue'
 import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
@@ -22,7 +22,6 @@ import JSZip from 'jszip'
 import { download } from 'lazy-js-utils'
 import { h, ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { compress } from '@awesome-compressor/browser-compress-image'
-// Electron specific imports
 import { usePresenter } from './composables/usePresenter'
 
 // 导入 img-comparison-slider
@@ -31,32 +30,32 @@ import('img-comparison-slider')
 // 检测是否为 macOS
 const isMacOS = ref(false)
 
-// 单个图片的状态接口
+// 压缩结果接口
+interface CompressionResult {
+  id: string
+  url: string
+  tool: string
+  size: number
+  ratio: number
+  isSelected: boolean
+}
+
+// 单个图片的状态接口 (Merged)
 interface ImageItem {
   id: string
   file: File
   originalUrl: string
-  compressedUrl?: string
+  compressionResults: CompressionResult[]
+  selectedResultId?: string
   originalSize: number
-  compressedSize?: number
-  compressionRatio?: number
   isCompressing: boolean
   compressionError?: string
   quality: number // 每张图片独立的质量设置
-  // Electron specific - node compression support
+  isQualityCustomized: boolean // 标记图片质量是否被用户单独修改过
+  qualityDragging: number // 拖动过程中的临时质量值
+  // Electron specific
   isNodeCompressing?: boolean
   nodeCompressionStarted?: boolean
-  compressionResults?: CompressionResult[]
-}
-
-// 压缩结果接口 (for electron multi-engine support)
-interface CompressionResult {
-  tool: string
-  compressedUrl: string
-  compressedSize: number
-  compressionRatio: number
-  blob: Blob | null
-  isBest: boolean
 }
 
 // 响应式状态
@@ -67,17 +66,20 @@ const isDragOver = ref(false)
 const currentImageIndex = ref(0)
 const isCompressingAll = ref(false)
 const isMobileDragging = ref(false)
-const isPCDragging = ref(false) // PC端拖拽状态 // 移动端拖拽状态
+const isPCDragging = ref(false)
 
 // 图片查看相关状态
-const imageZoom = ref(1) // 图片缩放比例
-const isFullscreen = ref(false) // 全屏状态
-const imageTransform = ref({ x: 0, y: 0 }) // 图片位移
+const imageZoom = ref(1)
+const isFullscreen = ref(false)
+const imageTransform = ref({ x: 0, y: 0 })
+
+// 用于强制重建img-comparison-slider的key
+const comparisonSliderKey = ref(0)
 
 // 全局配置
-const preserveExif = ref(false) // EXIF 信息保留选项
-const globalQuality = ref(0.6) // 全局质量设置
-const globalQualityDragging = ref(0.6) // 拖动过程中的临时质量值
+const preserveExif = ref(false)
+const globalQuality = ref(0.6)
+const globalQualityDragging = ref(0.6)
 
 // 设置面板相关状态
 const showSettingsPanel = ref(false)
@@ -91,69 +93,41 @@ interface ToolConfig {
 
 // 可用的工具选项
 const availableTools = ['tinypng']
-
-// 工具配置数组
 const toolConfigs = ref<ToolConfig[]>([])
-
-// 临时工具配置（用于设置面板编辑）
 const tempToolConfigs = ref<ToolConfig[]>([])
 
 // Electron specific - Get presenter instances
 const nodeCompressPresenter = usePresenter('nodeCompressPresenter')
 
-// 打开设置面板时，复制当前配置到临时配置
-const openSettingsPanel = () => {
+const openSettingsPanel = (): void => {
   tempToolConfigs.value = JSON.parse(JSON.stringify(toolConfigs.value))
   showSettingsPanel.value = true
 }
 
-// 关闭设置面板时，不保存临时配置的更改
-const closeSettingsPanel = () => {
+const closeSettingsPanel = (): void => {
   showSettingsPanel.value = false
-  // 不更新 toolConfigs，保持原有配置
 }
 
-// 从 localStorage 恢复设置
-const loadSettings = () => {
+const loadSettings = (): void => {
   try {
     const savedConfigs = localStorage.getItem('toolConfigs')
     if (savedConfigs) {
       toolConfigs.value = JSON.parse(savedConfigs)
     } else {
-      // 默认配置
-      toolConfigs.value = [
-        {
-          name: 'tinypng',
-          key: '',
-          enabled: false,
-        },
-      ]
+      toolConfigs.value = [{ name: 'tinypng', key: '', enabled: false }]
     }
   } catch (error) {
     console.warn('Failed to load settings from localStorage:', error)
-    // 使用默认配置
-    toolConfigs.value = [
-      {
-        name: 'tinypng',
-        key: '',
-        enabled: false,
-      },
-    ]
+    toolConfigs.value = [{ name: 'tinypng', key: '', enabled: false }]
   }
-
-  // 同步初始化拖动状态
   globalQualityDragging.value = globalQuality.value
 }
 
-// 保存临时配置到实际配置并保存到 localStorage（显示成功提示）
-const saveSettings = () => {
+const saveSettings = (): void => {
   try {
-    // 将临时配置复制到实际配置
     toolConfigs.value = JSON.parse(JSON.stringify(tempToolConfigs.value))
-    // 保存到 localStorage
     localStorage.setItem('toolConfigs', JSON.stringify(toolConfigs.value))
     ElMessage.success('Settings saved successfully!')
-    // 关闭设置面板
     showSettingsPanel.value = false
   } catch (error) {
     console.error('Failed to save settings:', error)
@@ -161,352 +135,245 @@ const saveSettings = () => {
   }
 }
 
-// 添加新的工具配置（操作临时配置）
-const addToolConfig = () => {
-  // 获取已使用的工具名称
+const addToolConfig = (): void => {
   const usedTools = tempToolConfigs.value.map((config) => config.name)
-  // 找到第一个未使用的工具
   const availableTool = availableTools.find((tool) => !usedTools.includes(tool))
-
   if (availableTool) {
-    tempToolConfigs.value.push({
-      name: availableTool,
-      key: '',
-      enabled: false,
-    })
+    tempToolConfigs.value.push({ name: availableTool, key: '', enabled: false })
   }
 }
 
-// 删除工具配置（操作临时配置）
-const removeToolConfig = (index: number) => {
+const removeToolConfig = (index: number): void => {
   tempToolConfigs.value.splice(index, 1)
 }
 
-// 全局质量百分比计算属性 - 显示拖动中的值
-const globalQualityPercent = computed(() =>
-  Math.round(globalQualityDragging.value * 100),
-)
+const globalQualityPercent = computed(() => Math.round(globalQualityDragging.value * 100))
 
-// 全局质量拖动输入处理 - 只更新显示，不触发重压缩
-const handleGlobalQualityInput = (value: number) => {
+const handleGlobalQualityInput = (value: number): void => {
   globalQualityDragging.value = value / 100
 }
 
-// 全局质量拖动结束处理 - 触发重压缩
-const handleGlobalQualitySliderChange = async (value: number) => {
+const handleGlobalQualitySliderChange = async (value: number): Promise<void> => {
   const newGlobalQuality = value / 100
   globalQualityDragging.value = newGlobalQuality
   await handleGlobalQualityChange(newGlobalQuality)
 }
 
-// 修改全局质量变化处理函数 - 自动更新所有图片
-const handleGlobalQualityChange = async (newGlobalQuality: number) => {
+const handleGlobalQualityChange = async (newGlobalQuality: number): Promise<void> => {
   globalQuality.value = newGlobalQuality
-  globalQualityDragging.value = newGlobalQuality // 同步拖动状态
-
-  // 更新所有图片质量为新的全局质量
-  const recompressPromises = imageItems.value.map(async (item) => {
-    item.quality = newGlobalQuality
-    // 如果图片没有在压缩中，自动重新压缩
-    if (!item.isCompressing) {
-      await compressImage(item)
-    }
-  })
-
-  // 并行处理所有图片的重新压缩
+  globalQualityDragging.value = newGlobalQuality
+  const recompressPromises = imageItems.value
+    .filter((item) => !item.isQualityCustomized)
+    .map(async (item) => {
+      item.quality = newGlobalQuality
+      item.qualityDragging = newGlobalQuality
+      if (!item.isCompressing) {
+        await compressImage(item)
+      }
+    })
   await Promise.all(recompressPromises)
 }
 
-// 单个图片质量变化处理
-const handleImageQualityChange = async (
-  item: ImageItem,
-  newQualityPercent: number,
-) => {
-  // 更新质量值 (转换为0-1范围)
-  item.quality = newQualityPercent / 100
+const handleImageQualityInput = (item: ImageItem, value: number): void => {
+  item.qualityDragging = value / 100
+}
 
-  // 如果图片没有在压缩中，自动重新压缩
+const handleImageQualitySliderChange = async (item: ImageItem, value: number): Promise<void> => {
+  const newQuality = value / 100
+  item.qualityDragging = newQuality
+  await handleImageQualityChange(item, value)
+}
+
+const resetImageQualityToGlobal = async (item: ImageItem): Promise<void> => {
+  item.quality = globalQuality.value
+  item.qualityDragging = globalQuality.value
+  item.isQualityCustomized = false
   if (!item.isCompressing) {
     await compressImage(item)
   }
 }
 
-// 图片列表状态
-const imageItems = ref<ImageItem[]>([])
-const supportType = [
-  'image/png',
-  'image/jpg',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-]
+const handleImageQualityChange = async (
+  item: ImageItem,
+  newQualityPercent: number
+): Promise<void> => {
+  const newQuality = newQualityPercent / 100
+  item.quality = newQuality
+  item.qualityDragging = newQuality
+  if (Math.abs(newQuality - globalQuality.value) < 0.01) {
+    item.isQualityCustomized = false
+  } else {
+    item.isQualityCustomized = true
+  }
+  if (!item.isCompressing) {
+    await compressImage(item)
+  }
+}
 
-// 检查并过滤不支持的文件，显示提示信息
+const imageItems = ref<ImageItem[]>([])
+const supportType = ['image/png', 'image/jpg', 'image/jpeg', 'image/gif', 'image/webp']
+
 function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
   const imageFiles = files.filter((file) => file.type.startsWith('image/'))
-  const supportedFiles = imageFiles.filter((file) =>
-    supportType.includes(file.type),
-  )
-  const unsupportedFiles = imageFiles.filter(
-    (file) => !supportType.includes(file.type),
-  )
-
-  // 如果有不支持的图片格式，显示详细提示
+  const supportedFiles = imageFiles.filter((file) => supportType.includes(file.type))
+  const unsupportedFiles = imageFiles.filter((file) => !supportType.includes(file.type))
   if (unsupportedFiles.length > 0) {
-    const unsupportedDetails = unsupportedFiles.map((file) => {
-      const extension = file.name.split('.').pop()?.toLowerCase() || 'unknown'
-      return {
-        name: file.name,
-        extension: extension.toUpperCase(),
-        type: file.type || 'unknown',
-      }
-    })
-
     const unsupportedFormats = [
-      ...new Set(unsupportedDetails.map((detail) => detail.extension)),
+      ...new Set(
+        unsupportedFiles.map((file) => file.name.split('.').pop()?.toLowerCase() || 'unknown')
+      )
     ]
-
     ElMessage({
       message: h('div', [
-        h(
-          'div',
-          { style: 'font-weight: 600; margin-bottom: 6px' },
-          `已过滤 ${unsupportedFiles.length} 个不支持的图片文件:`,
-        ),
-        h(
-          'div',
-          { style: 'font-size: 13px; margin-bottom: 4px; color: #f56565' },
-          `不支持的格式: ${unsupportedFormats.join(', ')}`,
-        ),
-        unsupportedFiles.length <= 3
-          ? h(
-              'div',
-              { style: 'font-size: 12px; margin-bottom: 6px; opacity: 0.8' },
-              unsupportedFiles.map((f) => f.name).join(', '),
-            )
-          : h(
-              'div',
-              { style: 'font-size: 12px; margin-bottom: 6px; opacity: 0.8' },
-              `${unsupportedFiles
-                .slice(0, 2)
-                .map((f) => f.name)
-                .join(', ')} 等 ${unsupportedFiles.length} 个文件`,
-            ),
-        h(
-          'div',
-          {
-            style:
-              'font-size: 12px; opacity: 0.7; border-top: 1px solid #e2e8f0; padding-top: 4px',
-          },
-          '✅ 支持的格式: PNG, JPG, JPEG, GIF, WebP',
-        ),
+        h('div', `Filtered ${unsupportedFiles.length} unsupported image files.`),
+        h('div', `Unsupported formats: ${unsupportedFormats.join(', ')}`)
       ]),
       type: 'warning',
-      duration: 5000,
+      duration: 5000
     })
   }
-
-  // 如果有非图片文件，也提示
   const nonImageFiles = files.filter((file) => !file.type.startsWith('image/'))
   if (nonImageFiles.length > 0) {
     ElMessage({
-      message: h('div', [
-        h('div', `📁 检测到 ${nonImageFiles.length} 个非图片文件已被过滤`),
-        nonImageFiles.length <= 3
-          ? h(
-              'div',
-              { style: 'font-size: 12px; margin-top: 4px; opacity: 0.8' },
-              nonImageFiles.map((f) => f.name).join(', '),
-            )
-          : h(
-              'div',
-              { style: 'font-size: 12px; margin-top: 4px; opacity: 0.8' },
-              `${nonImageFiles
-                .slice(0, 2)
-                .map((f) => f.name)
-                .join(', ')} 等文件`,
-            ),
-      ]),
+      message: h('div', `Filtered ${nonImageFiles.length} non-image files.`),
       type: 'info',
-      duration: 3000,
+      duration: 3000
     })
   }
-
   return supportedFiles
 }
 
-// 计算属性
 const hasImages = computed(() => imageItems.value.length > 0)
 const currentImage = computed(() => imageItems.value[currentImageIndex.value])
+const selectedResult = computed(() => {
+  if (!currentImage.value || !currentImage.value.selectedResultId) return null
+  return currentImage.value.compressionResults.find(
+    (result) => result.id === currentImage.value.selectedResultId
+  )
+})
 const totalOriginalSize = computed(() =>
-  imageItems.value.reduce((sum, item) => sum + item.originalSize, 0),
+  imageItems.value.reduce((sum, item) => sum + item.originalSize, 0)
 )
 const totalCompressedSize = computed(() =>
-  imageItems.value.reduce((sum, item) => sum + (item.compressedSize || 0), 0),
+  imageItems.value.reduce((sum, item) => {
+    const selectedResult = item.compressionResults.find((r) => r.id === item.selectedResultId)
+    return sum + (selectedResult?.size || 0)
+  }, 0)
 )
-
 const totalCompressionRatio = computed(() => {
   if (totalOriginalSize.value === 0) return 0
-  return (
-    ((totalOriginalSize.value - totalCompressedSize.value) /
-      totalOriginalSize.value) *
-    100
-  )
+  return ((totalOriginalSize.value - totalCompressedSize.value) / totalOriginalSize.value) * 100
 })
 const compressedCount = computed(
   () =>
-    imageItems.value.filter(
-      (item) => item.compressedUrl && !item.compressionError,
-    ).length,
+    imageItems.value.filter((item) => item.compressionResults.length > 0 && !item.compressionError)
+      .length
 )
 const allCompressed = computed(
-  () =>
-    imageItems.value.length > 0 &&
-    compressedCount.value === imageItems.value.length,
+  () => imageItems.value.length > 0 && compressedCount.value === imageItems.value.length
 )
-
-// 检查是否可以添加新的工具配置
 const canAddToolConfig = computed(() => {
-  // 获取已使用的工具名称
   const usedTools = tempToolConfigs.value.map((config) => config.name)
-  // 检查是否还有未使用的工具
   return availableTools.some((tool) => !usedTools.includes(tool))
 })
 
-// 注册事件监听器
 onMounted(() => {
-  // 检测操作系统
   isMacOS.value = navigator.userAgent.includes('Mac')
-  
-  // 加载保存的设置
   loadSettings()
-
   fileRef.value!.addEventListener('change', handleFileInputChange)
-
-  // 添加全局拖拽事件监听
   document.addEventListener('dragover', handleDragOver)
   document.addEventListener('drop', handleDrop)
   document.addEventListener('dragenter', handleDragEnter)
   document.addEventListener('dragleave', handleDragLeave)
-
-  // 添加粘贴事件监听
   document.addEventListener('paste', handlePaste)
-
-  // 添加移动端触摸事件监听
   document.addEventListener('touchstart', handleTouchStart, { passive: true })
   document.addEventListener('touchend', handleTouchEnd, { passive: true })
   document.addEventListener('touchcancel', handleTouchEnd, { passive: true })
-
-  // 添加PC端鼠标事件监听
   document.addEventListener('mousedown', handleMouseDown)
   document.addEventListener('mouseup', handleMouseUp)
-
-  // 添加键盘事件监听
   document.addEventListener('keydown', handleKeydown)
-
-  // 添加鼠标事件监听（用于图片拖拽）
   document.addEventListener('mousemove', handleImageMouseMove)
   document.addEventListener('mouseup', handleImageMouseUp)
-
-  // 添加窗口大小变化监听
   window.addEventListener('resize', handleWindowResize)
+
+  // Listen for node compression progress events
+  if (window.electron?.ipcRenderer) {
+    window.electron.ipcRenderer.on('node-compression-progress', (_event, progressData) => {
+      handleNodeCompressionProgress(progressData)
+    })
+  }
 })
 
 onUnmounted(() => {
-  // 清理事件监听器
   document.removeEventListener('dragover', handleDragOver)
   document.removeEventListener('drop', handleDrop)
   document.removeEventListener('dragenter', handleDragEnter)
   document.removeEventListener('dragleave', handleDragLeave)
   document.removeEventListener('paste', handlePaste)
-
-  // 清理移动端触摸事件监听器
   document.removeEventListener('touchstart', handleTouchStart)
   document.removeEventListener('touchend', handleTouchEnd)
   document.removeEventListener('touchcancel', handleTouchEnd)
-
-  // 清理PC端鼠标事件监听器
   document.removeEventListener('mousedown', handleMouseDown)
   document.removeEventListener('mouseup', handleMouseUp)
-
-  // 清理图片查看相关事件监听
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('mousemove', handleImageMouseMove)
   document.removeEventListener('mouseup', handleImageMouseUp)
-
-  // 清理窗口事件监听
   window.removeEventListener('resize', handleWindowResize)
-
-  // 清理对象URL
   imageItems.value.forEach((item) => {
     URL.revokeObjectURL(item.originalUrl)
-    if (item.compressedUrl) {
-      URL.revokeObjectURL(item.compressedUrl)
-    }
+    item.compressionResults.forEach((result) => {
+      if (result.url.startsWith('blob:')) {
+        URL.revokeObjectURL(result.url)
+      }
+    })
   })
+
+  // Clean up IPC event listeners
+  if (window.electron?.ipcRenderer) {
+    window.electron.ipcRenderer.removeAllListeners('node-compression-progress')
+  }
 })
 
-// 移动端触摸事件处理
-function handleTouchStart(e: TouchEvent) {
-  // 检查触摸是否在图片比较滑块上
+function handleTouchStart(e: TouchEvent): void {
   const target = e.target as HTMLElement
-  if (
-    target.closest('img-comparison-slider') ||
-    target.closest('.comparison-slider-fullscreen')
-  ) {
+  if (target.closest('img-comparison-slider') || target.closest('.comparison-slider-fullscreen')) {
     isMobileDragging.value = true
-    console.log('touch start')
   }
 }
 
-function handleTouchEnd(_e: TouchEvent) {
-  // 触摸结束时恢复显示
+function handleTouchEnd(): void {
   isMobileDragging.value = false
-  console.log('touch end')
 }
 
-// PC端鼠标事件处理
-function handleMouseDown(e: MouseEvent) {
-  // 检查鼠标按下是否在图片比较滑块上
+function handleMouseDown(e: MouseEvent): void {
   const target = e.target as HTMLElement
-  if (
-    target.closest('img-comparison-slider') ||
-    target.closest('.comparison-slider-fullscreen')
-  ) {
+  if (target.closest('img-comparison-slider') || target.closest('.comparison-slider-fullscreen')) {
     isPCDragging.value = true
-    console.log('mouse down on slider')
   }
 }
 
-function handleMouseUp(_e: MouseEvent) {
-  // 鼠标松开时恢复显示
+function handleMouseUp(): void {
   isPCDragging.value = false
-  console.log('mouse up')
 }
 
-// 拖拽事件处理
-function handleDragOver(e: DragEvent) {
+function handleDragOver(e: DragEvent): void {
   e.preventDefault()
 }
 
-function handleDragEnter(e: DragEvent) {
+function handleDragEnter(e: DragEvent): void {
   e.preventDefault()
   if (e.dataTransfer?.items) {
-    // 检查是否包含图片文件或文件夹
     const hasImageOrFolder = Array.from(e.dataTransfer.items).some(
       (item) =>
         (item.kind === 'file' && item.type.startsWith('image/')) ||
-        (item.kind === 'file' && item.type === ''),
+        (item.kind === 'file' && item.type === '')
     )
-    if (hasImageOrFolder) {
-      isDragOver.value = true
-    }
+    if (hasImageOrFolder) isDragOver.value = true
   }
 }
 
-function handleDragLeave(e: DragEvent) {
+function handleDragLeave(e: DragEvent): void {
   e.preventDefault()
-  // 只有当离开整个应用区域时才设置为false
   if (
     !e.relatedTarget ||
     !document.querySelector('.app-container')?.contains(e.relatedTarget as Node)
@@ -515,457 +382,305 @@ function handleDragLeave(e: DragEvent) {
   }
 }
 
-async function handleDrop(e: DragEvent) {
+async function handleDrop(e: DragEvent): Promise<void> {
   e.preventDefault()
   isDragOver.value = false
-
   loading.value = true
-
   try {
     let files: File[] = []
-
-    console.log('=== Drop Event Debug ===')
-    console.log('dataTransfer.items:', e.dataTransfer?.items)
-    console.log('dataTransfer.files:', e.dataTransfer?.files)
-    console.log('items length:', e.dataTransfer?.items?.length)
-    console.log('files length:', e.dataTransfer?.files?.length)
-
-    // 首先尝试使用 DataTransferItemList API（支持文件夹）
     const items = e.dataTransfer?.items
     if (items && items.length > 0) {
-      console.log('使用 DataTransferItemList API')
       files = await extractFilesFromDataTransfer(items)
-      console.log(
-        'extractFilesFromDataTransfer 结果:',
-        files.length,
-        files.map((f) => f.name),
-      )
     }
-
-    // 如果上面的方法没有获取到文件，回退到传统的 files API
     if (files.length === 0 && e.dataTransfer?.files) {
-      console.log('回退到传统 files API')
       files = Array.from(e.dataTransfer.files)
-      console.log(
-        '传统 API 结果:',
-        files.length,
-        files.map((f) => f.name),
-      )
     }
-
-    if (files.length === 0) {
-      console.warn('没有找到任何文件')
-      ElMessage({
-        message: 'No files found. Please try again.',
-        type: 'warning',
-      })
-      return
-    }
-
+    if (files.length === 0) return
     const imageFiles = filterAndNotifyUnsupportedFiles(files)
-    console.log(
-      '过滤后的图片文件:',
-      imageFiles.length,
-      imageFiles.map((f) => f.name),
-    )
-
-    if (imageFiles.length === 0) {
-      ElMessage({
-        message: '没有找到支持的图片文件',
-        type: 'warning',
-      })
-      return
-    }
-
+    if (imageFiles.length === 0) return
     await addNewImages(imageFiles)
-
-    ElMessage({
-      message: `Successfully loaded ${imageFiles.length} image(s)`,
-      type: 'success',
-    })
+    ElMessage.success(`Successfully loaded ${imageFiles.length} image(s)`)
   } catch (error) {
     console.error('Error processing dropped files:', error)
-    ElMessage({
-      message: 'Error processing files. Please try again.',
-      type: 'error',
-    })
+    ElMessage.error('Error processing files.')
   } finally {
     loading.value = false
   }
 }
 
-// 粘贴事件处理
-async function handlePaste(e: ClipboardEvent) {
-  e.preventDefault()
-
-  const items = e.clipboardData?.items
-  if (!items || items.length === 0) {
+async function handlePaste(e: ClipboardEvent): Promise<void> {
+  const activeElement = document.activeElement
+  if (
+    activeElement &&
+    (activeElement.tagName === 'INPUT' ||
+      activeElement.tagName === 'TEXTAREA' ||
+      (activeElement as HTMLElement).isContentEditable)
+  )
     return
-  }
-
-  console.log('=== Paste Event Debug ===')
-  console.log('clipboardData.items:', items)
-  console.log('items length:', items.length)
-
+  e.preventDefault()
+  const items = e.clipboardData?.items
+  if (!items || items.length === 0) return
   loading.value = true
-
   try {
-    let files: File[] = []
-
-    // 方法1: 首先尝试使用 webkitGetAsEntry API（支持文件夹）
-    await Promise.all(
-      Array.from(items).map(async (item, i) => {
-        console.log(`处理剪贴板 Item ${i}:`, {
-          kind: item.kind,
-          type: item.type,
-          webkitGetAsEntry: !!item.webkitGetAsEntry,
-        })
-
-        if (item.kind === 'file') {
-          // 尝试使用 webkitGetAsEntry 获取文件系统入口
-          const entry = item.webkitGetAsEntry?.()
-          console.log(`Item ${i} webkitGetAsEntry:`, entry)
-
-          if (entry) {
-            console.log(`Item ${i} 使用 processEntry`)
-            const itemFiles: File[] = []
-            await processEntry(entry, itemFiles)
-            console.log(
-              `Item ${i} processEntry 完成，文件数:`,
-              itemFiles.length,
-              itemFiles.map((f) => f.name),
-            )
-            files.push(...itemFiles)
-          } else {
-            // 回退到传统文件API
-            console.log(`Item ${i} 回退到 getAsFile`)
-            const file = item.getAsFile()
-            if (file) {
-              console.log(`剪贴板文件 ${i}:`, file.name, file.type, file.size)
-              files.push(file)
-            } else {
-              console.log(`Item ${i} getAsFile 返回 null`)
-            }
-          }
-        } else {
-          console.log(`Item ${i} 不是文件类型, kind: ${item.kind}`)
-        }
-      }),
-    )
-
-    console.log(
-      `总共收集到 ${files.length} 个文件:`,
-      files.map((f) => f.name),
-    )
-
-    // 过滤图片文件
+    const files = await extractFilesFromItems(items)
     const imageFiles = filterAndNotifyUnsupportedFiles(files)
-    console.log(
-      '剪贴板过滤后的图片文件:',
-      imageFiles.length,
-      imageFiles.map((f) => f.name),
-    )
-
-    if (imageFiles.length === 0) {
-      console.log('剪贴板中没有找到支持的图片文件')
-      return // 静默处理，不显示错误消息
-    }
-
+    if (imageFiles.length === 0) return
     await addNewImages(imageFiles)
-
-    ElMessage({
-      message: `Successfully pasted ${imageFiles.length} image(s)`,
-      type: 'success',
-    })
+    ElMessage.success(`Successfully pasted ${imageFiles.length} image(s)`)
   } catch (error) {
     console.error('Error processing pasted files:', error)
-    ElMessage({
-      message: 'Error processing pasted files. Please try again.',
-      type: 'error',
-    })
+    ElMessage.error('Error processing pasted files.')
   } finally {
     loading.value = false
   }
 }
 
-// 从DataTransfer中提取所有文件（包括文件夹中的文件）
-async function extractFilesFromDataTransfer(
-  items: DataTransferItemList,
-): Promise<File[]> {
-  console.log('extractFilesFromDataTransfer 开始处理', items.length, '个 items')
+async function extractFilesFromDataTransfer(items: DataTransferItemList): Promise<File[]> {
   return await extractFilesFromItems(items)
 }
 
-// 通用的文件提取函数，支持拖拽和粘贴
-async function extractFilesFromItems(
-  items: DataTransferItemList,
-): Promise<File[]> {
-  console.log('extractFilesFromItems 开始处理', items.length, '个 items')
-
+async function extractFilesFromItems(items: DataTransferItemList): Promise<File[]> {
   const promises: Promise<File[]>[] = []
-
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
-    console.log(`处理 Item ${i}:`, { kind: item.kind, type: item.type })
-
     if (item.kind === 'file') {
       const entry = item.webkitGetAsEntry?.()
-      console.log(`Item ${i} webkitGetAsEntry:`, entry)
-
       if (entry) {
-        console.log(`Item ${i} 使用 processEntry`)
         const itemFiles: File[] = []
-        promises.push(
-          processEntry(entry, itemFiles).then(() => {
-            console.log(
-              `Item ${i} processEntry 完成，文件数:`,
-              itemFiles.length,
-              itemFiles.map((f) => f.name),
-            )
-            return itemFiles
-          }),
-        )
+        promises.push(processEntry(entry, itemFiles).then(() => itemFiles))
       } else {
-        // 回退到传统文件API - 当webkitGetAsEntry返回null时
-        console.log(`Item ${i} 回退到 getAsFile`)
         const file = item.getAsFile()
-        if (file) {
-          console.log(`Item ${i} getAsFile 成功:`, file.name)
-          promises.push(Promise.resolve([file]))
-        } else {
-          console.log(`Item ${i} getAsFile 失败`)
-          promises.push(Promise.resolve([]))
-        }
+        if (file) promises.push(Promise.resolve([file]))
       }
     }
   }
-
-  // 等待所有文件处理完成
   const allFileArrays = await Promise.all(promises)
-  const files = allFileArrays.flat()
-
-  console.log(
-    'extractFilesFromItems 完成，总共',
-    files.length,
-    '个文件:',
-    files.map((f) => f.name),
-  )
-  return files
+  return allFileArrays.flat()
 }
 
-// 递归处理文件和文件夹
-async function processEntry(
-  entry: FileSystemEntry,
-  files: File[],
-): Promise<void> {
-  console.log(
-    'processEntry 开始处理:',
-    entry.name,
-    entry.isFile,
-    entry.isDirectory,
-  )
-
+async function processEntry(entry: FileSystemEntry, files: File[]): Promise<void> {
   if (entry.isFile) {
-    const fileEntry = entry as FileSystemFileEntry
-    console.log('处理文件:', fileEntry.name)
-
     try {
-      const file = await new Promise<File>((resolve, reject) => {
-        fileEntry.file(resolve, reject)
-      })
-      console.log('成功获取文件:', file.name, file.size, file.type)
+      const file = await new Promise<File>((resolve, reject) =>
+        (entry as FileSystemFileEntry).file(resolve, reject)
+      )
       files.push(file)
-      console.log('当前文件数组长度:', files.length)
     } catch (error) {
-      console.error('获取文件失败:', fileEntry.name, error)
+      console.error('Failed to get file:', entry.name, error)
     }
   } else if (entry.isDirectory) {
-    console.log('处理目录:', entry.name)
-    const dirEntry = entry as FileSystemDirectoryEntry
-    const reader = dirEntry.createReader()
-    const entries = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+    const reader = (entry as FileSystemDirectoryEntry).createReader()
+    const entries = await new Promise<FileSystemEntry[]>((resolve, reject) =>
       reader.readEntries(resolve, reject)
-    })
-
-    console.log('目录中的条目数:', entries.length)
+    )
     for (const childEntry of entries) {
       await processEntry(childEntry, files)
     }
   }
-
-  console.log('processEntry 完成:', entry.name, '当前总文件数:', files.length)
 }
 
-// 文件输入框变化处理
-async function handleFileInputChange() {
+async function handleFileInputChange(): Promise<void> {
   const selectedFiles = Array.from(fileRef.value.files || []) as File[]
   if (selectedFiles.length > 0) {
     loading.value = true
-
     try {
       const imageFiles = filterAndNotifyUnsupportedFiles(selectedFiles)
-
-      if (imageFiles.length === 0) {
-        ElMessage({
-          message: '没有找到支持的图片文件',
-          type: 'warning',
-        })
-        return
-      }
-
+      if (imageFiles.length === 0) return
       await addNewImages(imageFiles)
-
-      ElMessage({
-        message: `Successfully loaded ${imageFiles.length} image(s)`,
-        type: 'success',
-      })
+      ElMessage.success(`Successfully loaded ${imageFiles.length} image(s)`)
     } finally {
       loading.value = false
-      // 清空文件输入框的值，确保可以重复选择同一文件
       fileRef.value.value = ''
     }
   }
 }
 
-// 添加新图片到列表
-async function addNewImages(files: File[]) {
+async function addNewImages(files: File[]): Promise<void> {
   const newItems: ImageItem[] = files.map((file) => ({
     id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     file,
     originalUrl: URL.createObjectURL(file),
     originalSize: file.size,
-    isCompressing: false,
-    quality: globalQuality.value, // 使用全局质量作为默认值
-    // Electron specific
-    isNodeCompressing: false,
-    nodeCompressionStarted: false,
     compressionResults: [],
+    isCompressing: false,
+    quality: globalQuality.value,
+    isQualityCustomized: false,
+    qualityDragging: globalQuality.value,
+    isNodeCompressing: false,
+    nodeCompressionStarted: false
   }))
-  // 自动开始压缩所有新添加的图片
   await compressImages(newItems)
   imageItems.value.push(...newItems)
 }
 
-// 压缩单个图片 - 增强版支持electron node压缩
 async function compressImage(item: ImageItem): Promise<void> {
   if (item.isCompressing) return
-
   item.isCompressing = true
   item.compressionError = undefined
 
   try {
-    const compressedBlob = await compress(item.file, {
-      quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
+    const enabledToolConfigs = toolConfigs.value.filter(
+      (config) => config.enabled && config.key.trim()
+    )
+
+    // 调用压缩函数获取所有结果
+    const compressResults = await compress(item.file, {
+      quality: item.quality,
       type: 'blob',
-      preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
+      preserveExif: preserveExif.value,
+      toolConfigs: enabledToolConfigs,
+      returnAllResults: true // 返回所有结果
     })
 
-    if (!compressedBlob) {
-      ElMessage({
-        message: 'size is too large',
-        type: 'error',
-      })
+    if (
+      !compressResults ||
+      !compressResults.allResults ||
+      compressResults.allResults.length === 0
+    ) {
+      ElMessage.error('Compression failed')
       return
     }
 
-    if (item.compressedUrl) {
-      URL.revokeObjectURL(item.compressedUrl)
+    // 清理旧的结果URL
+    item.compressionResults.forEach((result) => {
+      if (result.url.startsWith('blob:')) {
+        URL.revokeObjectURL(result.url)
+      }
+    })
+
+    // 转换为CompressionResult格式
+    item.compressionResults = []
+
+    // 如果有最佳结果，先添加它
+    if (compressResults.bestResult) {
+      const bestBlob = new Blob([compressResults.bestResult], { type: item.file.type })
+      const bestResultData = {
+        id: `${item.id}-best-${Date.now()}`,
+        url: URL.createObjectURL(bestBlob),
+        tool: compressResults.bestTool || 'browser',
+        size: bestBlob.size,
+        ratio: ((item.originalSize - bestBlob.size) / item.originalSize) * 100,
+        isSelected: true
+      }
+      item.compressionResults.push(bestResultData)
+      item.selectedResultId = bestResultData.id
     }
 
-    item.compressedUrl = URL.createObjectURL(compressedBlob)
-    item.compressedSize = compressedBlob.size
-    item.compressionRatio =
-      ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+    // 添加其他结果的统计信息（注意：这些可能没有实际的blob数据）
+    compressResults.allResults.forEach((result, index) => {
+      if (result.tool !== compressResults.bestTool) {
+        // 计算压缩率 - 统一使用相同的计算方式确保一致性
+        const compressionRatio = result.compressedSize
+          ? ((item.originalSize - result.compressedSize) / item.originalSize) * 100
+          : result.compressionRatio > 1
+            ? result.compressionRatio
+            : result.compressionRatio * 100
 
-    // Electron specific - also try node compression
+        item.compressionResults.push({
+          id: `${item.id}-result-${index}-${Date.now()}`,
+          url: '', // 没有实际的blob
+          tool: result.tool || 'browser',
+          size: result.compressedSize || 0,
+          ratio: compressionRatio,
+          isSelected: false
+        })
+      }
+    })
+
+    // Electron specific: also try node compression
     if (nodeCompressPresenter && !item.nodeCompressionStarted) {
       compressWithNode(item)
     }
-
-    // 为当前图片优化渲染性能
   } catch (error) {
     console.error('Compression error:', error)
-    item.compressionError =
-      error instanceof Error ? error.message : 'Compression failed'
+    item.compressionError = error instanceof Error ? error.message : 'Compression failed'
   } finally {
     item.isCompressing = false
   }
 }
 
-// Electron specific - Node压缩功能（不阻塞主流程）
 async function compressWithNode(item: ImageItem): Promise<void> {
-  if (!item.file) return
-
-  // 防止重复压缩
-  if (item.isNodeCompressing) return
-
+  if (!item.file || item.isNodeCompressing) return
   item.isNodeCompressing = true
   item.nodeCompressionStarted = true
-
   try {
-    console.log(`Starting node compression for: ${item.file.name}`)
-
-    // 将文件转换为ArrayBuffer，传递给主进程处理
     const arrayBuffer = await item.file.arrayBuffer()
-    // 转换为 Uint8Array 以便在 IPC 中传输
     const uint8Array = new Uint8Array(arrayBuffer)
-
-    // 使用presenter调用node压缩，传递字节数组而不是Buffer
     const result = await nodeCompressPresenter.compressImageFromBytes(uint8Array, item.file.name, {
       quality: item.quality,
       preserveExif: false
     })
 
-    if (result && result.bestTool && result.bestFileId) {
-      // 使用文件ID而不是文件路径
-      const fileId = result.bestFileId
+    if (result && result.allResults && result.allResults.length > 0) {
+      // 添加所有node压缩结果
+      const nodeResults = result.allResults.map((nodeResult, index) => ({
+        id: `${item.id}-node-${nodeResult.tool}-${index}-${Date.now()}`,
+        url: `eacompressor-file://getFile?id=${nodeResult.fileId}`,
+        tool: `${nodeResult.tool} (Node)`,
+        size: nodeResult.compressedSize,
+        ratio: nodeResult.compressionRatio,
+        isSelected: false
+      }))
 
-      // 从allResults中获取正确的压缩大小
-      const compressedSize = result.allResults.length > 0 ? result.allResults[0].compressedSize : 0
+      item.compressionResults.push(...nodeResults)
 
-      // 添加node压缩结果到已有结果中
-      const nodeResult: CompressionResult = {
-        tool: `node-${result.bestTool}`,
-        compressedUrl: `eacompressor-file://getFile?id=${fileId}`,
-        compressedSize,
-        compressionRatio: result.compressionRatio,
-        blob: null, // Node结果不是blob
-        isBest: false
-      }
-
-      // 如果node压缩效果更好，更新主要压缩结果
-      if (result.compressionRatio > (item.compressionRatio || 0)) {
-        if (item.compressedUrl) {
-          URL.revokeObjectURL(item.compressedUrl)
-        }
-        item.compressedUrl = nodeResult.compressedUrl
-        item.compressedSize = nodeResult.compressedSize
-        item.compressionRatio = nodeResult.compressionRatio
-      }
-
-      console.log(
-        `Node compression completed for ${item.file.name}: ${result.compressionRatio.toFixed(1)}%`
+      // 检查是否有更好的node结果
+      const currentSelected = item.compressionResults.find((r) => r.id === item.selectedResultId)
+      const bestNodeResult = nodeResults.reduce((best, current) =>
+        current.ratio > best.ratio ? current : best
       )
-      console.log(`Generated protocol URL: ${nodeResult.compressedUrl}`)
-      console.log(`File ID: ${fileId}`)
-    } else {
-      console.warn(`Node compression failed for ${item.file.name}: no valid result`)
+
+      if (!currentSelected || bestNodeResult.ratio > currentSelected.ratio) {
+        // 取消当前选择
+        if (currentSelected) currentSelected.isSelected = false
+        // 选择最好的node结果
+        bestNodeResult.isSelected = true
+        item.selectedResultId = bestNodeResult.id
+      }
     }
   } catch (error) {
-    console.error('Node compression error for', item.file.name, ':', error)
-    // 如果node压缩失败，不要影响整体流程，只记录错误
+    console.error('Node compression error:', error)
   } finally {
-    console.log('node compression finished')
     item.isNodeCompressing = false
   }
 }
 
-// 批量压缩图片
-async function compressImages(items: ImageItem[] = imageItems.value) {
-  isCompressingAll.value = true
+/**
+ * Handle node compression progress events from main process
+ */
+function handleNodeCompressionProgress(progressData: {
+  filename: string
+  status: 'started' | 'completed' | 'error'
+  data?: unknown
+}): void {
+  console.log('Node compression progress:', progressData)
 
+  const { filename, status, data } = progressData
+  const item = imageItems.value.find((item) => item.file.name === filename)
+
+  if (!item) return
+
+  switch (status) {
+    case 'started':
+      // Progress is already handled by the direct function call
+      break
+
+    case 'completed':
+      // Update the UI with completion status if needed
+      console.log(`Node compression completed for ${filename}:`, data)
+      break
+
+    case 'error':
+      console.error(`Node compression failed for ${filename}:`, data)
+      item.compressionError = (data as { error?: string })?.error || 'Node compression failed'
+      item.isNodeCompressing = false
+      break
+  }
+}
+
+async function compressImages(items: ImageItem[] = imageItems.value): Promise<void> {
+  isCompressingAll.value = true
   try {
-    // 并发压缩，但限制并发数量避免性能问题
     const batchSize = 3
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize)
@@ -976,198 +691,109 @@ async function compressImages(items: ImageItem[] = imageItems.value) {
   }
 }
 
-// 处理 EXIF 保留选项变化
-async function handlePreserveExifChange() {
-  // 重新压缩所有已存在的图片，使用新的 EXIF 设置
+async function handlePreserveExifChange(): Promise<void> {
   for (const item of imageItems.value) {
-    if (!item.isCompressing) {
-      await compressImage(item)
-    }
+    if (!item.isCompressing) await compressImage(item)
   }
 }
 
-// 删除单个图片
-function deleteImage(index: number) {
+function selectCompressionResult(item: ImageItem, resultId: string): void {
+  // 取消当前选择
+  item.compressionResults.forEach((result) => {
+    result.isSelected = result.id === resultId
+  })
+  item.selectedResultId = resultId
+
+  // Force update the comparison slider by updating the key
+  comparisonSliderKey.value++
+}
+
+function deleteImage(index: number): void {
   const item = imageItems.value[index]
   URL.revokeObjectURL(item.originalUrl)
-  if (item.compressedUrl) {
-    URL.revokeObjectURL(item.compressedUrl)
-  }
-
+  // 清理所有压缩结果的URL
+  item.compressionResults.forEach((result) => {
+    if (result.url.startsWith('blob:')) {
+      URL.revokeObjectURL(result.url)
+    }
+  })
   imageItems.value.splice(index, 1)
-
-  // 调整当前图片索引
   if (currentImageIndex.value >= imageItems.value.length) {
     currentImageIndex.value = Math.max(0, imageItems.value.length - 1)
   }
 }
 
-// 清空所有图片
-function clearAllImages() {
+function clearAllImages(): void {
   imageItems.value.forEach((item) => {
     URL.revokeObjectURL(item.originalUrl)
-    if (item.compressedUrl) {
-      URL.revokeObjectURL(item.compressedUrl)
-    }
+    item.compressionResults.forEach((result) => {
+      if (result.url.startsWith('blob:')) {
+        URL.revokeObjectURL(result.url)
+      }
+    })
   })
-
   imageItems.value = []
   currentImageIndex.value = 0
 }
 
-// 上传图片
-function uploadImages() {
+function uploadImages(): void {
   document.getElementById('file')?.click()
 }
 
-// 生成带时间戳的文件夹名称
 function generateFolderName(): string {
   const now = new Date()
-  const timestamp = now
-    .toISOString()
-    .replace(/:/g, '-')
-    .replace(/\./g, '-')
-    .replace('T', '_')
-    .slice(0, 19) // 取到秒级别: YYYY-MM-DD_HH-MM-SS
-  return `browser-compress-image_${timestamp}`
+  return `browser-compress-image_${now.toISOString().slice(0, 19).replace(/:/g, '-').replace('T', '_')}`
 }
 
-// 下载单个图片（保持原始文件名）
-async function downloadImage(item: ImageItem) {
-  if (!item.compressedUrl) return
-
+async function downloadImage(item: ImageItem): Promise<void> {
+  const selectedResult = item.compressionResults.find((r) => r.id === item.selectedResultId)
+  if (!selectedResult) return
   try {
-    const originalName = item.file.name
-    download(item.compressedUrl, originalName)
-
-    ElMessage({
-      message: `Downloaded: ${originalName}`,
-      type: 'success',
-      duration: 2000,
-    })
-  } catch (error) {
-    ElMessage({
-      message: 'Download failed. Please try again.',
-      type: 'error',
-    })
+    download(selectedResult.url, item.file.name)
+    ElMessage.success(`Downloaded: ${item.file.name}`)
+  } catch {
+    ElMessage.error('Download failed.')
   }
 }
 
-// Electron specific - 预览压缩结果对比
-async function previewCompressionResult(item: ImageItem): Promise<void> {
-  try {
-    // 通过 IPC 调用 windowPresenter 创建预览窗口
-    const previewData = {
-      originalImage: {
-        url: item.originalUrl,
-        name: item.file.name,
-        size: item.originalSize
-      },
-      compressedImage: {
-        url: item.compressedUrl || '',
-        tool: 'best',
-        size: item.compressedSize || 0,
-        ratio: item.compressionRatio || 0
-      }
-    }
-
-    // 调用 presenter 方法
-    await window.electron.ipcRenderer.invoke(
-      'presenter:call',
-      'windowPresenter',
-      'previewComparison',
-      previewData
-    )
-  } catch (error) {
-    console.error('Failed to open preview:', error)
-    ElMessage({
-      message: 'Failed to open preview window',
-      type: 'error'
-    })
-  }
-}
-
-// 批量下载所有图片（创建 ZIP 压缩包）
-async function downloadAllImages() {
+async function downloadAllImages(): Promise<void> {
   if (downloading.value) return
-
   const downloadableItems = imageItems.value.filter(
-    (item) => item.compressedUrl && !item.compressionError,
+    (item) => item.compressionResults.length > 0 && !item.compressionError && item.selectedResultId
   )
   if (downloadableItems.length === 0) {
-    ElMessage({
-      message: 'No compressed images to download',
-      type: 'warning',
-    })
+    ElMessage.warning('No compressed images to download')
     return
   }
-
   downloading.value = true
-
   try {
-    // 生成带时间戳的文件夹名称
     const folderName = generateFolderName()
-
-    // 创建 JSZip 实例
     const zip = new JSZip()
     const folder = zip.folder(folderName)
-
-    if (!folder) {
-      throw new Error('Failed to create folder in ZIP')
-    }
-
-    // 添加延迟显示加载状态
+    if (!folder) throw new Error('Failed to create folder in ZIP')
     await new Promise((resolve) => setTimeout(resolve, 300))
-
-    // 将所有压缩图片添加到 ZIP 中
     for (const item of downloadableItems) {
-      if (item.compressedUrl) {
-        // 获取压缩后的 Blob 数据
-        const response = await fetch(item.compressedUrl)
+      const selectedResult = item.compressionResults.find((r) => r.id === item.selectedResultId)
+      if (selectedResult) {
+        const response = await fetch(selectedResult.url)
         const blob = await response.blob()
-
-        // 使用原始文件名添加到 ZIP 文件夹中
         folder.file(item.file.name, blob)
       }
     }
-
-    // 生成 ZIP 文件
     const zipBlob = await zip.generateAsync({ type: 'blob' })
-
-    // 下载 ZIP 文件
     const zipFileName = `${folderName}.zip`
     download(URL.createObjectURL(zipBlob), zipFileName)
-
-    ElMessage({
-      message: h('div', { style: 'line-height: 1.5;' }, [
-        h(
-          'div',
-          { style: 'color: #16a34a; font-weight: 500; margin-bottom: 4px;' },
-          `Successfully downloaded ${downloadableItems.length} images in ${zipFileName}`,
-        ),
-        h(
-          'div',
-          {
-            style: `color: ${totalCompressionRatio.value < 0 ? '#dc2626' : '#059669'}; font-size: 13px; font-family: monospace; background: ${totalCompressionRatio.value < 0 ? 'rgba(220, 38, 38, 0.1)' : 'rgba(5, 150, 105, 0.1)'}; padding: 2px 6px; border-radius: 4px;`,
-          },
-          `Total ${totalCompressionRatio.value < 0 ? 'increased' : 'saved'}: ${totalCompressionRatio.value < 0 ? '+' : ''}${Math.abs(totalCompressionRatio.value).toFixed(1)}%`,
-        ),
-      ]),
-      type: 'success',
-      duration: 4000,
-    })
+    ElMessage.success(
+      `Successfully downloaded ${downloadableItems.length} images in ${zipFileName}`
+    )
   } catch (error) {
     console.error('Batch download error:', error)
-    ElMessage({
-      message: 'Batch download failed. Please try again.',
-      type: 'error',
-    })
+    ElMessage.error('Batch download failed.')
   } finally {
     downloading.value = false
   }
 }
 
-// 格式化文件大小
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes'
   const k = 1024
@@ -1176,97 +802,67 @@ function formatFileSize(bytes: number): string {
   return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`
 }
 
-// 切换当前预览图片
-function setCurrentImage(index: number) {
+function setCurrentImage(index: number): void {
   currentImageIndex.value = index
 
-  if (isFullscreen.value) {
-    // 全屏模式下切换图片时，保持当前缩放比例和所有位移不变
-    // 只是切换图片索引，不改变任何变换状态
-    nextTick(() => {
-      // 重新计算边界约束，确保当前位移在新图片的有效范围内
+  // Force img-comparison-slider to rebuild when switching images
+  comparisonSliderKey.value++
+
+  nextTick(() => {
+    if (isFullscreen.value) {
       constrainImagePosition()
-    })
-  } else {
-    // 非全屏模式下切换图片时，重置缩放和位移
-    resetImageTransform()
-  }
-}
-
-// 图片缩放控制
-function zoomIn() {
-  imageZoom.value = Math.min(imageZoom.value * 1.2, 5) // 最大放大5倍
-  nextTick(() => {
-    constrainImagePosition()
+    } else {
+      resetImageTransform()
+    }
   })
 }
 
-function zoomOut() {
-  imageZoom.value = Math.max(imageZoom.value / 1.2, 0.1) // 最小缩小到0.1倍
-  nextTick(() => {
-    constrainImagePosition()
-  })
+function zoomIn(): void {
+  imageZoom.value = Math.min(imageZoom.value * 1.2, 5)
+  nextTick(() => constrainImagePosition())
 }
 
-// 约束图片位置在边界内
-function constrainImagePosition() {
+function zoomOut(): void {
+  imageZoom.value = Math.max(imageZoom.value / 1.2, 0.1)
+  nextTick(() => constrainImagePosition())
+}
+
+function constrainImagePosition(): void {
   const bounds = calculateImageBounds()
-  imageTransform.value.x = Math.max(
-    bounds.minX,
-    Math.min(bounds.maxX, imageTransform.value.x),
-  )
-  imageTransform.value.y = Math.max(
-    bounds.minY,
-    Math.min(bounds.maxY, imageTransform.value.y),
-  )
+  imageTransform.value.x = Math.max(bounds.minX, Math.min(bounds.maxX, imageTransform.value.x))
+  imageTransform.value.y = Math.max(bounds.minY, Math.min(bounds.maxY, imageTransform.value.y))
 }
 
-// 图片加载完成处理
-function handleImageLoad(type: 'original' | 'compressed') {
-  console.log(`${type}图加载完成`)
-  // 重新计算边界，因为图片尺寸可能已经改变
-  nextTick(() => {
-    constrainImagePosition()
-  })
+function handleImageLoad(): void {
+  nextTick(() => constrainImagePosition())
 }
 
-// 窗口大小变化处理
-function handleWindowResize() {
+function handleWindowResize(): void {
   if (isFullscreen.value) {
-    // 延迟一帧执行，确保DOM更新完成
-    nextTick(() => {
-      constrainImagePosition()
-    })
+    nextTick(() => constrainImagePosition())
   }
 }
 
-function resetZoom() {
+function resetZoom(): void {
   imageZoom.value = 1
   imageTransform.value = { x: 0, y: 0 }
 }
 
-// 重置图片变换
-function resetImageTransform() {
+function resetImageTransform(): void {
   imageZoom.value = 1
   imageTransform.value = { x: 0, y: 0 }
 }
 
-// 全屏控制
-function toggleFullscreen() {
+function toggleFullscreen(): void {
   isFullscreen.value = !isFullscreen.value
-  // 无论进入还是退出全屏，都重置缩放到100%和位移
   resetImageTransform()
 }
 
-// 键盘事件处理
-function handleKeydown(e: KeyboardEvent) {
+function handleKeydown(e: KeyboardEvent): void {
   if (!hasImages.value) return
-
   switch (e.key) {
     case 'Escape':
-      if (isFullscreen.value) {
-        toggleFullscreen()
-      }
+      if (isFullscreen.value) toggleFullscreen()
       break
     case '+':
     case '=':
@@ -1297,159 +893,107 @@ function handleKeydown(e: KeyboardEvent) {
     case 'ArrowRight':
       if (isFullscreen.value) {
         e.preventDefault()
-        setCurrentImage(
-          Math.min(imageItems.value.length - 1, currentImageIndex.value + 1),
-        )
+        setCurrentImage(Math.min(imageItems.value.length - 1, currentImageIndex.value + 1))
       }
       break
   }
 }
 
-// 鼠标滚轮缩放
-function handleWheel(e: WheelEvent) {
+function handleWheel(e: WheelEvent): void {
   if (!isFullscreen.value) return
-
   e.preventDefault()
-  if (e.deltaY > 0) {
-    zoomOut()
-  } else {
-    zoomIn()
-  }
+  if (e.deltaY > 0) zoomOut()
+  else zoomIn()
 }
 
-// 图片拖拽移动（全屏模式下）
 let isDragging = false
 let dragStartX = 0
 let dragStartY = 0
 
-function handleImageMouseDown(e: MouseEvent) {
-  if (!isFullscreen.value) return
-
-  // 如果图片没有放大，不处理拖拽
-  if (imageZoom.value <= 1) {
-    return // 让比较滑块正常工作
-  }
-
+function handleImageMouseDown(e: MouseEvent): void {
+  if (!isFullscreen.value || imageZoom.value <= 1) return
   isDragging = true
   dragStartX = e.clientX
   dragStartY = e.clientY
-
-  // 阻止事件冒泡，避免触发比较滑块的拖拽
   e.preventDefault()
   e.stopPropagation()
 }
 
-// 计算图片拖拽边界
-function calculateImageBounds() {
-  if (!isFullscreen.value || imageZoom.value <= 1) {
-    return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
-  }
-
-  // 获取全屏容器的实际尺寸
-  const container = document.querySelector(
-    '.comparison-container-fullscreen',
-  ) as HTMLElement
-  if (!container) {
-    return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
-  }
-
+function calculateImageBounds(): { maxX: number; maxY: number; minX: number; minY: number } {
+  if (!isFullscreen.value || imageZoom.value <= 1) return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
+  const container = document.querySelector('.comparison-container-fullscreen') as HTMLElement
+  if (!container) return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
   const containerRect = container.getBoundingClientRect()
-  const containerWidth = containerRect.width
-  const containerHeight = containerRect.height
-
-  // 获取图片元素
   const imgElement = container.querySelector(
-    '.comparison-image-fullscreen, .single-image',
+    '.comparison-image-fullscreen, .single-image'
   ) as HTMLImageElement
-  if (!imgElement) {
-    return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
-  }
-
-  // 获取图片的自然尺寸
-  const naturalWidth = imgElement.naturalWidth
-  const naturalHeight = imgElement.naturalHeight
-
-  if (naturalWidth === 0 || naturalHeight === 0) {
-    return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
-  }
-
-  // 计算图片在容器中的实际显示尺寸（考虑 object-fit: contain）
-  const containerAspect = containerWidth / containerHeight
+  if (!imgElement) return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
+  const { naturalWidth, naturalHeight } = imgElement
+  if (naturalWidth === 0 || naturalHeight === 0) return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
+  const containerAspect = containerRect.width / containerRect.height
   const imageAspect = naturalWidth / naturalHeight
-
-  let displayWidth: number
-  let displayHeight: number
-
+  let displayWidth, displayHeight
   if (imageAspect > containerAspect) {
-    // 图片较宽，以容器宽度为准
-    displayWidth = containerWidth
-    displayHeight = containerWidth / imageAspect
+    displayWidth = containerRect.width
+    displayHeight = containerRect.width / imageAspect
   } else {
-    // 图片较高，以容器高度为准
-    displayHeight = containerHeight
-    displayWidth = containerHeight * imageAspect
+    displayHeight = containerRect.height
+    displayWidth = containerRect.height * imageAspect
   }
-
-  // 应用缩放
   const scaledWidth = displayWidth * imageZoom.value
   const scaledHeight = displayHeight * imageZoom.value
-
-  // 计算允许的移动范围
-  const maxMoveX = Math.max(0, (scaledWidth - containerWidth) / 2)
-  const maxMoveY = Math.max(0, (scaledHeight - containerHeight) / 2)
-
-  console.log('边界计算:', {
-    zoom: imageZoom.value,
-    container: { width: containerWidth, height: containerHeight },
-    natural: { width: naturalWidth, height: naturalHeight },
-    display: { width: displayWidth, height: displayHeight },
-    scaled: { width: scaledWidth, height: scaledHeight },
-    bounds: {
-      maxX: maxMoveX,
-      maxY: maxMoveY,
-      minX: -maxMoveX,
-      minY: -maxMoveY,
-    },
-  })
-
-  return {
-    maxX: maxMoveX,
-    maxY: maxMoveY,
-    minX: -maxMoveX,
-    minY: -maxMoveY,
-  }
+  const maxMoveX = Math.max(0, (scaledWidth - containerRect.width) / 2)
+  const maxMoveY = Math.max(0, (scaledHeight - containerRect.height) / 2)
+  return { maxX: maxMoveX, maxY: maxMoveY, minX: -maxMoveX, minY: -maxMoveY }
 }
 
-function handleImageMouseMove(e: MouseEvent) {
+function handleImageMouseMove(e: MouseEvent): void {
   if (!isDragging) return
-
   const newX = e.clientX - dragStartX
   const newY = e.clientY - dragStartY
-
-  // 获取边界
   const bounds = calculateImageBounds()
-
-  // 限制移动范围
-  const clampedX = Math.max(bounds.minX, Math.min(bounds.maxX, newX))
-  const clampedY = Math.max(bounds.minY, Math.min(bounds.maxY, newY))
-
-  imageTransform.value.x = clampedX
-  imageTransform.value.y = clampedY
+  imageTransform.value.x = Math.max(bounds.minX, Math.min(bounds.maxX, newX))
+  imageTransform.value.y = Math.max(bounds.minY, Math.min(bounds.maxY, newY))
 }
 
-function handleImageMouseUp() {
+function handleImageMouseUp(): void {
   isDragging = false
 }
-</script>
 
+async function previewCompressionResult(item: ImageItem): Promise<void> {
+  try {
+    const selectedResult = item.compressionResults.find((r) => r.id === item.selectedResultId)
+    if (!selectedResult) {
+      ElMessage.warning('No compression result selected')
+      return
+    }
+
+    const previewData = {
+      originalImage: { url: item.originalUrl, name: item.file.name, size: item.originalSize },
+      compressedImage: {
+        url: selectedResult.url,
+        tool: selectedResult.tool,
+        size: selectedResult.size,
+        ratio: selectedResult.ratio
+      }
+    }
+    await window.electron.ipcRenderer.invoke(
+      'presenter:call',
+      'windowPresenter',
+      'previewComparison',
+      previewData
+    )
+  } catch (error) {
+    console.error('Failed to open preview:', error)
+    ElMessage.error('Failed to open preview window')
+  }
+}
+</script>
 <template>
   <div class="app-container" :class="{ 'drag-over': isDragOver }">
-    <!-- macOS 透明标题栏区域 -->
     <div v-if="isMacOS" class="macos-titlebar">
       <div class="titlebar-drag-region" />
     </div>
-
-    <!-- 拖拽覆盖层 -->
     <div v-show="isDragOver" class="drag-overlay">
       <div class="drag-message">
         <el-icon class="drag-icon">
@@ -1457,13 +1001,10 @@ function handleImageMouseUp() {
         </el-icon>
         <div class="drag-text">Drop images or folders here</div>
         <div class="drag-subtitle">
-          Support multiple images and folder drag & drop • Or use Ctrl+V to
-          paste
+          Support multiple images and folder drag & drop • Or use Ctrl+V to paste
         </div>
       </div>
     </div>
-
-    <!-- Loading Overlay -->
     <div v-show="loading || isCompressingAll" class="loading-overlay">
       <div class="loading-spinner">
         <el-icon class="is-loading" size="40px">
@@ -1474,7 +1015,6 @@ function handleImageMouseUp() {
         </div>
       </div>
     </div>
-
     <GitForkVue
       link="https://github.com/awesome-compressor/electron-awesome-compressor"
       position="right"
@@ -1482,174 +1022,164 @@ function handleImageMouseUp() {
       content="Star on GitHub"
       color="#667eea"
     />
-
-    <!-- Header -->
     <header class="header-section" :class="{ 'macos-header': isMacOS }">
       <div class="title-container">
         <vivid-typing content="Electron Awesome Compressor" class="main-title" />
         <p class="subtitle">
-          Compress your images with ease, right in your browser • Support batch
-          processing
+          Compress your images with ease, right in your browser • Support batch processing
         </p>
       </div>
     </header>
-
-    <!-- Main Content -->
     <main class="main-content">
-      <!-- Settings Section - Always visible -->
       <section class="settings-section-main">
         <div class="settings-container">
           <el-button
             type="primary"
             class="settings-btn-main"
-            @click="openSettingsPanel"
             :icon="Setting"
             plain
+            @click="openSettingsPanel"
+            >Configure Compression Tools</el-button
           >
-            Configure Compression Tools
-          </el-button>
           <p class="settings-hint">
-            Configure API keys and enable compression tools before uploading
-            images
+            Configure API keys and enable compression tools before uploading images
           </p>
         </div>
       </section>
-
-      <!-- 初始上传区域 - 仅在没有图片时显示 -->
       <section v-if="!hasImages" class="upload-zone">
         <button class="upload-btn-hero" @click="uploadImages">
           <el-icon class="upload-icon">
             <Picture />
           </el-icon>
           <span class="upload-text">Drop, Paste or Click to Upload Images</span>
-          <span class="upload-hint">
-            Support PNG, JPG, JPEG, GIF, WebP formats • Multiple files & folders
-            supported • Use Ctrl+V to paste images
-          </span>
+          <span class="upload-hint"
+            >Support PNG, JPG, JPEG, GIF formats • Multiple files & folders supported • Use Ctrl+V
+            to paste images</span
+          >
         </button>
       </section>
-
-      <!-- 简化的工具栏 - 仅在有图片时显示 -->
       <div v-if="hasImages" class="floating-toolbar">
-        <div class="toolbar-section files-section">
-          <div class="files-info">
-            <div class="files-icon">📷</div>
-            <span class="files-count">{{ imageItems.length }} image(s)</span>
-            <span class="compressed-count"
-              >({{ compressedCount }} compressed)</span
-            >
+        <!-- Primary Row - Essential info and actions -->
+        <div class="toolbar-row primary-row">
+          <div class="toolbar-section files-section">
+            <div class="files-info">
+              <div class="files-icon">📷</div>
+              <span class="files-count">{{ imageItems.length }} image(s)</span>
+              <span class="compressed-count hide-mobile">({{ compressedCount }} compressed)</span>
+            </div>
+            <div class="action-buttons">
+              <button class="action-btn add-btn" title="Add More Images" @click="uploadImages">
+                <div class="btn-icon">
+                  <el-icon>
+                    <Upload />
+                  </el-icon>
+                </div>
+                <span class="btn-text hide-small">Add More</span>
+              </button>
+              <button
+                class="action-btn delete-btn"
+                title="Clear All Images"
+                @click="clearAllImages"
+              >
+                <div class="btn-icon">
+                  <el-icon>
+                    <CloseBold />
+                  </el-icon>
+                </div>
+                <span class="btn-text hide-small">Clear All</span>
+              </button>
+            </div>
           </div>
 
-          <div class="action-buttons">
-            <button
-              class="action-btn add-btn"
-              title="Add More Images"
-              @click="uploadImages"
-            >
-              <div class="btn-icon">
-                <el-icon>
-                  <Upload />
-                </el-icon>
-              </div>
-              <span class="btn-text">Add More</span>
-            </button>
-            <button
-              class="action-btn delete-btn"
-              title="Clear All Images"
-              @click="clearAllImages"
-            >
-              <div class="btn-icon">
-                <el-icon>
-                  <CloseBold />
-                </el-icon>
-              </div>
-              <span class="btn-text">Clear All</span>
-            </button>
-          </div>
-        </div>
+          <div class="toolbar-divider hide-mobile" />
 
-        <div class="toolbar-divider" />
-
-        <div class="toolbar-section stats-section">
-          <div class="stats-info">
-            <span class="size-label"
-              >Total: {{ formatFileSize(totalOriginalSize) }} →
-              {{ formatFileSize(totalCompressedSize) }}</span
-            >
-            <span
-              class="saved-mini"
-              :class="{ 'saved-negative': totalCompressionRatio < 0 }"
-            >
-              {{ totalCompressionRatio < 0 ? '+' : '-'
-              }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}%
-            </span>
-          </div>
-        </div>
-
-        <div class="toolbar-divider" />
-
-        <div class="toolbar-section options-section">
-          <div class="exif-option">
-            <el-checkbox
-              v-model="preserveExif"
-              @change="handlePreserveExifChange"
-            >
-              <span class="exif-label">Preserve EXIF</span>
-            </el-checkbox>
-          </div>
-
-          <div class="quality-control">
-            <span class="quality-label-small"
-              >Global Quality: {{ globalQualityPercent }}%</span
-            >
-            <el-slider
-              :model-value="globalQualityPercent"
-              @input="handleGlobalQualityInput"
-              @change="handleGlobalQualitySliderChange"
-              :max="100"
-              :step="1"
-              :min="1"
-              class="global-quality-slider"
-              :show-tooltip="false"
-              size="small"
-            />
-          </div>
-        </div>
-
-        <div v-if="allCompressed" class="toolbar-divider" />
-
-        <div v-if="allCompressed" class="toolbar-section download-section">
-          <button
-            class="download-btn-new"
-            :class="[{ downloading }]"
-            :disabled="downloading"
-            title="Download All Compressed Images"
-            @click="downloadAllImages"
-          >
-            <div class="download-btn-content">
-              <div class="download-icon">
-                <el-icon v-if="!downloading">
-                  <Download />
-                </el-icon>
-                <el-icon v-else class="is-loading">
-                  <Loading />
-                </el-icon>
-              </div>
-              <span class="download-text">
-                {{
-                  downloading
-                    ? 'Downloading...'
-                    : `Download All (${compressedCount})`
-                }}
+          <div class="toolbar-section stats-section">
+            <div class="stats-info">
+              <span class="size-label hide-small"
+                >Total: {{ formatFileSize(totalOriginalSize) }} →
+                {{ formatFileSize(totalCompressedSize) }}</span
+              >
+              <span class="size-label-mobile show-small"
+                >{{ formatFileSize(totalOriginalSize) }} →
+                {{ formatFileSize(totalCompressedSize) }}</span
+              >
+              <span class="saved-mini" :class="{ 'saved-negative': totalCompressionRatio < 0 }">
+                {{ totalCompressionRatio < 0 ? '+' : '-'
+                }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}%
               </span>
             </div>
-          </button>
+          </div>
+
+          <div v-if="allCompressed" class="toolbar-divider hide-mobile" />
+
+          <div v-if="allCompressed" class="toolbar-section download-section">
+            <button
+              class="download-btn-new"
+              :class="[{ downloading }]"
+              :disabled="downloading"
+              title="Download All Compressed Images"
+              @click="downloadAllImages"
+            >
+              <div class="download-btn-content">
+                <div class="download-icon">
+                  <el-icon v-if="!downloading">
+                    <Download />
+                  </el-icon>
+                  <el-icon v-else class="is-loading">
+                    <Loading />
+                  </el-icon>
+                </div>
+                <span class="download-text hide-small">{{
+                  downloading ? 'Downloading...' : `Download All (${compressedCount})`
+                }}</span>
+                <span class="download-text-mobile show-small">{{
+                  downloading ? 'Downloading...' : `Download (${compressedCount})`
+                }}</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Secondary Row - Options and quality control (can wrap on small screens) -->
+        <div class="toolbar-row secondary-row">
+          <div class="toolbar-section options-section">
+            <div class="exif-option">
+              <el-checkbox v-model="preserveExif" @change="handlePreserveExifChange">
+                <span class="exif-label"><span class="hide-small">Preserve</span> EXIF</span>
+              </el-checkbox>
+            </div>
+            <div class="quality-control">
+              <div class="global-quality-header">
+                <div class="quality-info-global">
+                  <span class="quality-label-global hide-small">Global Quality</span>
+                  <span class="quality-label-global show-small">Quality</span>
+                  <span class="quality-value-global">{{ globalQualityPercent }}%</span>
+                </div>
+                <div class="quality-indicator hide-small">
+                  <div class="quality-bar-bg">
+                    <div
+                      class="quality-bar-fill"
+                      :style="{ width: globalQualityPercent + '%' }"
+                    ></div>
+                  </div>
+                </div>
+              </div>
+              <el-slider
+                :model-value="globalQualityPercent"
+                :max="100"
+                :step="1"
+                :min="1"
+                class="global-quality-slider"
+                :show-tooltip="false"
+                size="small"
+                @input="handleGlobalQualityInput"
+                @change="handleGlobalQualitySliderChange"
+              />
+            </div>
+          </div>
         </div>
       </div>
-
-      <!-- 图片列表和预览区域 -->
       <section v-if="hasImages" class="images-section">
-        <!-- 图片列表缩略图 -->
         <div class="images-grid">
           <div
             v-for="(item, index) in imageItems"
@@ -1659,11 +1189,7 @@ function handleImageMouseUp() {
             @click="setCurrentImage(index)"
           >
             <div class="image-preview">
-              <img
-                class="preview-image"
-                :src="item.originalUrl"
-                :alt="item.file.name"
-              />
+              <img class="preview-image" :src="item.originalUrl" :alt="item.file.name" />
               <div v-if="item.isCompressing || item.isNodeCompressing" class="compressing-overlay">
                 <el-icon class="is-loading">
                   <Loading />
@@ -1674,46 +1200,125 @@ function handleImageMouseUp() {
               </div>
             </div>
             <div class="image-info">
-              <div class="image-name">
-                {{ item.file.name }}
+              <div class="image-header">
+                <div class="image-name" :title="item.file.name">{{ item.file.name }}</div>
+                <div class="image-format">{{ item.file.type.split('/')[1].toUpperCase() }}</div>
               </div>
               <div class="image-stats">
-                <span class="original-size">{{
-                  formatFileSize(item.originalSize)
-                }}</span>
-                <span class="compressed-size">
-                  → {{ formatFileSize(item.compressedSize || 0) }}
-                </span>
-                <span
-                  class="ratio"
-                  :class="{
-                    'ratio-negative': (item.compressionRatio || 0) < 0,
-                  }"
-                >
-                  ({{ (item.compressionRatio || 0) < 0 ? '+' : '-'
-                  }}{{ Math.abs(item.compressionRatio || 0).toFixed(1) }}%)
-                </span>
+                <div class="compression-result">
+                  <div class="size-comparison">
+                    <div class="size-item">
+                      <span class="size-label">Original</span
+                      ><span class="size-value original">{{
+                        formatFileSize(item.originalSize)
+                      }}</span>
+                    </div>
+                    <div class="size-arrow">
+                      <svg width="12" height="8" viewBox="0 0 12 8" fill="none">
+                        <path
+                          d="M1 4H11M11 4L8 1M11 4L8 7"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div class="size-item">
+                      <span class="size-label">Compressed</span
+                      ><span class="size-value compressed">{{
+                        formatFileSize(
+                          item.compressionResults.find((r) => r.id === item.selectedResultId)
+                            ?.size || 0
+                        )
+                      }}</span>
+                    </div>
+                  </div>
+                  <div class="compression-ratio">
+                    <span
+                      class="ratio-badge"
+                      :class="{
+                        'ratio-negative':
+                          (item.compressionResults.find((r) => r.id === item.selectedResultId)
+                            ?.ratio || 0) < 0
+                      }"
+                      >{{
+                        (item.compressionResults.find((r) => r.id === item.selectedResultId)
+                          ?.ratio || 0) < 0
+                          ? '+'
+                          : '-'
+                      }}{{
+                        Math.abs(
+                          item.compressionResults.find((r) => r.id === item.selectedResultId)
+                            ?.ratio || 0
+                        ).toFixed(1)
+                      }}%</span
+                    >
+                  </div>
+                </div>
               </div>
-              <!-- 独立的质量控制 -->
               <div class="image-quality-control">
-                <span class="quality-label-small"
-                  >Quality: {{ Math.round(item.quality * 100) }}%</span
-                >
+                <div class="quality-header">
+                  <div class="quality-info">
+                    <span class="quality-label">Quality</span
+                    ><span class="quality-value"
+                      >{{ Math.round(item.qualityDragging * 100) }}%</span
+                    >
+                  </div>
+                  <button
+                    v-if="item.isQualityCustomized"
+                    class="reset-quality-btn"
+                    title="Reset to global quality"
+                    @click.stop="resetImageQualityToGlobal(item)"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M2 6C2 3.79 3.79 2 6 2C7.5 2 8.78 2.88 9.41 4.12M10 6C10 8.21 8.21 10 6 10C4.5 10 3.22 9.12 2.59 7.88M9.5 3.5L9.41 4.12L8.79 4.03"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
                 <el-slider
-                  :model-value="Math.round(item.quality * 100)"
+                  :model-value="Math.round(item.qualityDragging * 100)"
                   :max="100"
                   :step="1"
                   :min="1"
                   class="image-quality-slider"
                   :show-tooltip="false"
                   size="small"
-                  @change="(val: number) => handleImageQualityChange(item, val)"
+                  @input="(val: number) => handleImageQualityInput(item, val)"
+                  @change="(val: number) => handleImageQualitySliderChange(item, val)"
                 />
+              </div>
+              <!-- 压缩结果列表 -->
+              <div v-if="item.compressionResults.length > 1" class="compression-results-list">
+                <div class="results-header">
+                  <span class="results-title">Results ({{ item.compressionResults.length }})</span>
+                </div>
+                <div class="results-grid">
+                  <div
+                    v-for="result in item.compressionResults"
+                    :key="result.id"
+                    class="result-item"
+                    :class="{ selected: result.id === item.selectedResultId }"
+                    @click.stop="selectCompressionResult(item, result.id)"
+                  >
+                    <div class="result-tool">{{ result.tool }}</div>
+                    <div class="result-size">{{ formatFileSize(result.size) }}</div>
+                    <div class="result-ratio" :class="{ negative: result.ratio < 0 }">
+                      {{ result.ratio < 0 ? '+' : '-' }}{{ Math.abs(result.ratio).toFixed(1) }}%
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="image-actions">
               <button
-                v-if="item.compressedUrl && !item.compressionError"
+                v-if="item.compressionResults.length > 0"
                 class="action-btn-small download-single"
                 title="Download this image"
                 @click.stop="downloadImage(item)"
@@ -1722,9 +1327,8 @@ function handleImageMouseUp() {
                   <Download />
                 </el-icon>
               </button>
-              <!-- Electron specific - Preview button -->
               <button
-                v-if="item.compressedUrl && !item.compressionError"
+                v-if="item.compressionResults.length > 0"
                 class="action-btn-small preview-single"
                 title="Preview comparison"
                 @click.stop="previewCompressionResult(item)"
@@ -1745,8 +1349,6 @@ function handleImageMouseUp() {
             </div>
           </div>
         </div>
-
-        <!-- 全屏图片对比预览 -->
         <div
           v-if="currentImage"
           class="fullscreen-comparison"
@@ -1754,47 +1356,13 @@ function handleImageMouseUp() {
         >
           <div
             class="comparison-container-fullscreen"
-            :style="{
-              cursor: imageZoom > 1 ? 'move' : 'default',
-            }"
+            :style="{ cursor: imageZoom > 1 ? 'move' : 'default' }"
             @wheel="handleWheel"
             @mousedown="handleImageMouseDown"
           >
-            <!-- 调试信息 -->
-            <div
-              v-if="!currentImage.originalUrl || !currentImage.compressedUrl"
-              class="debug-info"
-            >
-              <p>调试信息:</p>
-              <p>
-                originalUrl:
-                {{ currentImage.originalUrl ? '已加载' : '未加载' }}
-              </p>
-              <p>
-                compressedUrl:
-                {{ currentImage.compressedUrl ? '已加载' : '未加载' }}
-              </p>
-              <p>
-                originalSize: {{ formatFileSize(currentImage.originalSize) }}
-              </p>
-              <p>
-                compressedSize:
-                {{
-                  currentImage.compressedSize
-                    ? formatFileSize(currentImage.compressedSize)
-                    : '未压缩'
-                }}
-              </p>
-              <p>isCompressing: {{ currentImage.isCompressing }}</p>
-              <p>
-                compressionError:
-                {{ currentImage.compressionError || '无错误' }}
-              </p>
-            </div>
-
-            <!-- 主要的图片对比组件 -->
             <img-comparison-slider
-              v-if="currentImage.originalUrl && currentImage.compressedUrl"
+              v-if="currentImage.originalUrl && selectedResult && selectedResult.url"
+              :key="`${currentImage.id}-${selectedResult.id}-${comparisonSliderKey}`"
               class="comparison-slider-fullscreen"
               value="50"
             >
@@ -1805,141 +1373,101 @@ function handleImageMouseUp() {
                 alt="Original Image"
                 class="comparison-image-fullscreen"
                 :style="{
-                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
-                  transformOrigin: 'center center',
+                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px),transformOrigin: 'center center'`
                 }"
-                loading="eager"
-                decoding="sync"
-                @load="handleImageLoad('original')"
-                @error="console.error('原图加载失败')"
+                @load="handleImageLoad"
               />
               <img
                 slot="second"
-                :src="currentImage.compressedUrl"
+                :src="selectedResult.url"
                 alt="Compressed Image"
                 class="comparison-image-fullscreen"
                 :style="{
-                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
-                  transformOrigin: 'center center',
+                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px),transformOrigin: 'center center'`
                 }"
-                loading="eager"
-                decoding="sync"
-                @load="handleImageLoad('compressed')"
-                @error="console.error('压缩图加载失败')"
+                @load="handleImageLoad"
               />
               <!-- eslint-enable -->
             </img-comparison-slider>
-
-            <!-- 仅显示原图（压缩中或出错时） -->
-            <div
-              v-else-if="currentImage.originalUrl"
-              class="single-image-preview"
-            >
+            <div v-else-if="currentImage.originalUrl" class="single-image-preview">
               <img
                 :src="currentImage.originalUrl"
                 :alt="currentImage.file.name"
                 class="single-image"
                 :style="{
-                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
-                  transformOrigin: 'center center',
+                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px),transformOrigin: 'center center',`
                 }"
-                @load="handleImageLoad('original')"
+                @load="handleImageLoad"
               />
-              <div v-if="currentImage.isCompressing || currentImage.isNodeCompressing" class="preview-overlay">
+              <div
+                v-if="currentImage.isCompressing || currentImage.isNodeCompressing"
+                class="preview-overlay"
+              >
                 <el-icon class="is-loading" size="30px">
                   <Loading />
                 </el-icon>
                 <div class="overlay-text">Compressing...</div>
               </div>
-              <div
-                v-if="currentImage.compressionError"
-                class="preview-overlay error"
-              >
+              <div v-if="currentImage.compressionError" class="preview-overlay error">
                 <div class="overlay-text">Compression Error</div>
-                <div class="overlay-subtext">
-                  {{ currentImage.compressionError }}
-                </div>
+                <div class="overlay-subtext">{{ currentImage.compressionError }}</div>
               </div>
             </div>
-
-            <!-- 图片信息覆盖层 -->
             <div
               class="image-overlay-info"
-              :class="{
-                'mobile-dragging': isMobileDragging,
-                'pc-dragging': isPCDragging,
-              }"
+              :class="{ 'mobile-dragging': isMobileDragging, 'pc-dragging': isPCDragging }"
             >
               <div class="overlay-header">
-                <div class="image-title">
-                  {{ currentImage.file.name }}
-                </div>
+                <div class="image-title">{{ currentImage.file.name }}</div>
                 <div class="image-controls">
                   <el-button
                     circle
                     size="small"
-                    @click="zoomOut"
                     :disabled="imageZoom <= 0.1"
-                    title="缩小 (-)"
-                  >
-                    <el-icon><ZoomOut /></el-icon>
-                  </el-button>
-                  <span class="zoom-info"
-                    >{{ Math.round(imageZoom * 100) }}%</span
-                  >
+                    title="缩小 (-)
+                  "
+                    @click="zoomOut"
+                    ><el-icon> <ZoomOut /> </el-icon
+                  ></el-button>
+                  <span class="zoom-info">{{ Math.round(imageZoom * 100) }}%</span>
                   <el-button
                     circle
                     size="small"
-                    @click="zoomIn"
                     :disabled="imageZoom >= 5"
                     title="放大 (+)"
-                  >
-                    <el-icon><ZoomIn /></el-icon>
-                  </el-button>
+                    @click="zoomIn"
+                    ><el-icon> <ZoomIn /> </el-icon
+                  ></el-button>
+                  <el-button circle size="small" title="重置缩放 (0)" @click="resetZoom"
+                    ><el-icon> <Aim /> </el-icon
+                  ></el-button>
                   <el-button
                     circle
                     size="small"
-                    @click="resetZoom"
-                    title="重置缩放 (0)"
-                  >
-                    <el-icon><Aim /></el-icon>
-                  </el-button>
-                  <el-button
-                    circle
-                    size="small"
-                    @click="toggleFullscreen"
                     :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
-                  >
-                    <el-icon><FullScreen /></el-icon>
-                  </el-button>
+                    @click="toggleFullscreen"
+                    ><el-icon> <FullScreen /> </el-icon
+                  ></el-button>
                 </div>
               </div>
               <div class="image-details">
-                <span
-                  >{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span
-                >
+                <span>{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span>
                 <span>Quality: {{ Math.round(currentImage.quality * 100) }}%</span>
                 <span>{{ formatFileSize(currentImage.originalSize) }}</span>
-                <span v-if="currentImage.compressedSize">
-                  → {{ formatFileSize(currentImage.compressedSize) }}
-                </span>
+                <span v-if="selectedResult"> → {{ formatFileSize(selectedResult.size) }}</span>
                 <span
-                  v-if="currentImage.compressionRatio"
+                  v-if="selectedResult"
                   class="savings"
-                  :class="{
-                    'savings-negative': currentImage.compressionRatio < 0,
-                  }"
+                  :class="{ 'savings-negative': selectedResult.ratio < 0 }"
+                  >({{ selectedResult.ratio < 0 ? '+' : '-'
+                  }}{{ Math.abs(selectedResult.ratio).toFixed(1) }}%)</span
                 >
-                  ({{ currentImage.compressionRatio < 0 ? '+' : '-'
-                  }}{{ Math.abs(currentImage.compressionRatio).toFixed(1) }}%)
-                </span>
               </div>
             </div>
           </div>
         </div>
       </section>
     </main>
-
     <input
       id="file"
       ref="fileRef"
@@ -1948,8 +1476,6 @@ function handleImageMouseUp() {
       multiple
       hidden
     />
-
-    <!-- 设置面板 -->
     <el-dialog
       v-model="showSettingsPanel"
       title="Settings"
@@ -1959,35 +1485,28 @@ function handleImageMouseUp() {
       <div class="settings-content">
         <div class="settings-section">
           <h3 class="settings-title">
-            <el-icon><Key /></el-icon>
+            <el-icon>
+              <Key />
+            </el-icon>
             Tool Configurations
           </h3>
           <p class="settings-description">
             Configure API keys and settings for different compression tools.
           </p>
-
           <div class="tool-config-list">
-            <div
-              v-for="(config, index) in tempToolConfigs"
-              :key="index"
-              class="tool-config-item"
-            >
+            <div v-for="(config, index) in tempToolConfigs" :key="index" class="tool-config-item">
               <div class="tool-header">
                 <div class="tool-info">
-                  <el-icon class="tool-icon"><Picture /></el-icon>
+                  <el-icon class="tool-icon">
+                    <Picture />
+                  </el-icon>
                   <span class="tool-name">{{ config.name.toUpperCase() }}</span>
-                  <el-tag
-                    :type="config.enabled && config.key ? 'success' : 'info'"
-                    size="small"
-                  >
-                    {{ config.enabled && config.key ? 'Enabled' : 'Disabled' }}
-                  </el-tag>
+                  <el-tag :type="config.enabled && config.key ? 'success' : 'info'" size="small">{{
+                    config.enabled && config.key ? 'Enabled' : 'Disabled'
+                  }}</el-tag>
                 </div>
                 <div class="tool-actions">
-                  <el-switch
-                    v-model="config.enabled"
-                    :disabled="!config.key.trim()"
-                  />
+                  <el-switch v-model="config.enabled" :disabled="!config.key.trim()" />
                   <el-button
                     v-if="tempToolConfigs.length > 1"
                     type="danger"
@@ -1998,7 +1517,6 @@ function handleImageMouseUp() {
                   />
                 </div>
               </div>
-
               <div class="tool-config">
                 <el-form-item label="Tool">
                   <el-select v-model="config.name" placeholder="Select a tool">
@@ -2010,7 +1528,6 @@ function handleImageMouseUp() {
                     />
                   </el-select>
                 </el-form-item>
-
                 <el-form-item label="API Key">
                   <el-input
                     v-model="config.key"
@@ -2019,1813 +1536,1337 @@ function handleImageMouseUp() {
                     show-password
                     clearable
                   >
-                    <template #prepend>
-                      <el-icon><Key /></el-icon>
-                    </template>
+                    <template #prepend
+                      ><el-icon> <Key /> </el-icon
+                    ></template>
                   </el-input>
                 </el-form-item>
-
-                <div v-if="config.name === 'tinypng'" class="tool-help">
-                  <p class="help-text">
-                    <strong>TinyPNG API Key:</strong>
-                    Get your free API key from
-                    <a
-                      href="https://tinypng.com/developers"
-                      target="_blank"
-                      class="help-link"
-                    >
-                      TinyPNG Developer Portal
-                    </a>
-                  </p>
-                  <p class="help-note">
-                    💡 Free tier: 500 compressions per month
-                  </p>
-                </div>
               </div>
             </div>
           </div>
-
-          <div v-if="canAddToolConfig" class="add-tool-section">
-            <el-button type="primary" :icon="Plus" @click="addToolConfig">
-              Add Tool Configuration
-            </el-button>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <h3 class="settings-title">
-            <el-icon><Setting /></el-icon>
-            Usage Information
-          </h3>
-          <div class="usage-info">
-            <p>
-              • <strong>TinyPNG:</strong> Online service with excellent
-              compression for PNG, JPEG, and WebP files
-            </p>
-            <p>
-              • When enabled, configured tools will be included in the
-              compression process
-            </p>
-            <p>
-              • Settings are automatically saved to your browser's local storage
-            </p>
-            <p>
-              • <strong>Electron Node Compression:</strong> Additional server-side compression tools are automatically enabled
-            </p>
-          </div>
+          <el-button
+            type="primary"
+            :icon="Plus"
+            :disabled="!canAddToolConfig"
+            class="add-tool-btn"
+            @click="addToolConfig"
+            >Add Tool</el-button
+          >
         </div>
       </div>
-
       <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="closeSettingsPanel">Cancel</el-button>
-          <el-button type="primary" @click="saveSettings"> Save </el-button>
-        </div>
+        <el-button @click="closeSettingsPanel">Cancel</el-button>
+        <el-button type="primary" @click="saveSettings">Save</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
-
 <style scoped>
+/* General App Styling */
 .app-container {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  position: relative;
-  overflow-x: hidden;
-  min-height: 100vh;
-  /* 优化滚动性能 */
-  -webkit-overflow-scrolling: touch;
-  /* 减少重绘 */
-  transform: translateZ(0);
-  will-change: scroll-position;
-  transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  background-color: #f0f2f5;
+  color: #333;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  position: relative;
+  overflow: hidden;
 }
 
-.app-container.drag-over {
-  background: linear-gradient(135deg, #667eea 20%, #764ba2 80%);
-}
-
-/* macOS 特有样式 */
-.macos-titlebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 28px;
-  background: transparent;
-  z-index: 9999;
-  -webkit-app-region: drag;
-}
-
-.titlebar-drag-region {
-  width: 100%;
-  height: 100%;
-}
-
-.macos-header {
-  padding-top: 88px !important; /* 为macOS标题栏留出空间 */
-}
-
-/* 预览按钮样式 */
-.preview-single {
-  color: #7c3aed;
-  border-color: rgba(124, 58, 237, 0.2);
-}
-
-.preview-single:hover {
-  background: #f3f4f6;
-  border-color: rgba(124, 58, 237, 0.4);
-}
-
-/* 拖拽覆盖层 */
 .drag-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(102, 126, 234, 0.9);
-  backdrop-filter: blur(10px);
+  background-color: rgba(99, 102, 241, 0.9);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 2000;
-  animation: fadeIn 0.2s ease;
+  z-index: 1000;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
 }
 
 .drag-message {
   text-align: center;
   color: white;
-  padding: 40px;
-  border: 3px dashed rgba(255, 255, 255, 0.8);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  max-width: 480px;
-  margin: 0 auto;
+  animation: pulse 1.5s infinite;
 }
 
 .drag-icon {
   font-size: 64px;
-  opacity: 0.9;
-  display: block;
+  margin-bottom: 16px;
 }
 
 .drag-text {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 600;
-  margin: 0;
-  white-space: nowrap;
 }
 
 .drag-subtitle {
-  font-size: 14px;
-  opacity: 0.7;
-  font-weight: 400;
-  line-height: 1.6;
-  margin: 0;
-  text-align: center;
-  max-width: 320px;
+  font-size: 16px;
+  margin-top: 8px;
+  opacity: 0.8;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-/* Background Decoration */
-.bg-decoration {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.bg-circle {
-  position: absolute;
-  border-radius: 50%;
-  background: linear-gradient(
-    45deg,
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0.05)
-  );
-  animation: float 6s ease-in-out infinite;
-}
-
-.bg-circle-1 {
-  width: 300px;
-  height: 300px;
-  top: 10%;
-  left: -5%;
-  animation-delay: 0s;
-}
-
-.bg-circle-2 {
-  width: 200px;
-  height: 200px;
-  top: 60%;
-  right: -5%;
-  animation-delay: 2s;
-}
-
-.bg-circle-3 {
-  width: 150px;
-  height: 150px;
-  top: 80%;
-  left: 20%;
-  animation-delay: 4s;
-}
-
-@keyframes float {
+@keyframes pulse {
   0%,
   100% {
-    transform: translateY(0px) rotate(0deg);
+    transform: scale(1);
   }
 
-  33% {
-    transform: translateY(-20px) rotate(120deg);
-  }
-
-  66% {
-    transform: translateY(10px) rotate(240deg);
+  50% {
+    transform: scale(1.05);
   }
 }
 
-/* Loading Overlay */
 .loading-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(102, 126, 234, 0.95),
-    rgba(118, 75, 162, 0.95)
-  );
-  backdrop-filter: blur(10px);
+  background-color: rgba(255, 255, 255, 0.8);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 999;
+  backdrop-filter: blur(4px);
 }
 
 .loading-spinner {
   text-align: center;
-  color: white;
 }
 
 .loading-text {
-  margin-top: 16px;
-  font-size: 18px;
-  font-weight: 500;
+  margin-top: 12px;
+  font-size: 16px;
+  color: #4a5568;
 }
 
 /* Header */
 .header-section {
-  position: relative;
-  z-index: 1;
+  padding: 24px 48px;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
   text-align: center;
-  padding: 60px 20px 40px;
 }
 
 .title-container {
-  width: 100%;
+  max-width: 800px;
   margin: 0 auto;
 }
 
 .main-title {
-  font-size: 3.5rem;
-  font-weight: 800;
-  background: linear-gradient(45deg, #fff, #e0e7ff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 16px;
-  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  font-size: 36px;
+  font-weight: 700;
+  color: #2d3748;
+  letter-spacing: -0.02em;
 }
 
 .subtitle {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 1.2rem;
-  font-weight: 300;
-  margin: 0;
+  margin-top: 8px;
+  font-size: 16px;
+  color: #718096;
 }
 
 /* Main Content */
 .main-content {
-  position: relative;
-  z-index: 1;
+  flex-grow: 1;
   display: flex;
   flex-direction: column;
-  max-width: 100vw;
-  margin: 0;
-  padding: 0;
+  overflow: hidden;
+  padding: 16px;
+}
+
+/* Main Content Responsive */
+@media (max-width: 768px) {
+  .main-content {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 4px;
+  }
 }
 
 /* Settings Section */
 .settings-section-main {
-  position: relative;
-  z-index: 1;
-  text-align: center;
-  padding: 0 20px 30px;
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 16px;
+  background-color: #f0f2f5;
 }
 
 .settings-container {
-  max-width: 600px;
-  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .settings-btn-main {
-  font-size: 16px !important;
-  font-weight: 500 !important;
-  padding: 12px 24px !important;
-  border-radius: 12px !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
-  color: rgba(255, 255, 255, 0.95) !important;
-  transition: all 0.3s ease !important;
-  backdrop-filter: blur(10px) !important;
-}
-
-.settings-btn-main:hover {
-  background: rgba(255, 255, 255, 0.2) !important;
-  border-color: rgba(255, 255, 255, 0.5) !important;
-  transform: translateY(-2px);
-  color: white !important;
+  font-weight: 500;
 }
 
 .settings-hint {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
-  margin: 12px 0 0 0;
-  font-weight: 300;
+  font-size: 13px;
+  color: #718096;
+  margin: 0;
 }
 
-/* 英雄上传区域 */
+/* Upload Zone */
 .upload-zone {
-  flex: 1;
+  flex-grow: 1;
   display: flex;
-  align-items: center;
   justify-content: center;
-  padding: 20px;
+  align-items: center;
+  padding: 24px;
 }
 
 .upload-btn-hero {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px);
-  border: 2px dashed rgba(255, 255, 255, 0.3);
-  border-radius: 24px;
-  padding: 60px 40px;
-  color: white;
-  font-size: 18px;
-  font-weight: 600;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  transition: all 0.3s ease;
-  min-width: 400px;
-  text-align: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 600px;
+  height: 300px;
+  border: 2px dashed #cbd5e0;
+  border-radius: 16px;
+  background-color: #fafafa;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  padding: 24px;
 }
 
 .upload-btn-hero:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.5);
-  transform: translateY(-4px);
+  border-color: #667eea;
+  background-color: #f7f7ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .upload-icon {
   font-size: 48px;
-  opacity: 0.8;
+  color: #94a3b8;
+  margin-bottom: 16px;
+  transition: color 0.2s ease-in-out;
+}
+
+.upload-btn-hero:hover .upload-icon {
+  color: #667eea;
 }
 
 .upload-text {
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .upload-hint {
+  margin-top: 8px;
   font-size: 14px;
-  opacity: 0.7;
-  font-weight: 400;
-  line-height: 1.4;
+  color: #a0aec0;
+  max-width: 80%;
+  text-align: center;
 }
 
-/* 悬浮工具栏 */
+/* Floating Toolbar */
 .floating-toolbar {
-  margin: auto;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px;
+  margin: 0 auto 16px;
+  background: white;
   border-radius: 16px;
-  padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.12),
-    0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  width: fit-content;
+  max-width: 95%;
+  z-index: 10;
+}
+
+/* Large screen optimization */
+@media (min-width: 1200px) {
+  .floating-toolbar {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+  }
+
+  .toolbar-row {
+    align-items: center;
+    gap: 16px;
+    flex-wrap: nowrap;
+  }
+
+  .secondary-row {
+    padding-top: 0;
+    border-top: none;
+    border-left: 1px solid #f1f5f9;
+    padding-left: 16px;
+    margin-left: 8px;
+  }
+}
+
+/* Medium screen optimization */
+@media (min-width: 769px) and (max-width: 1199px) {
+  .floating-toolbar {
+    gap: 12px;
+    padding: 14px 18px;
+    max-width: 90%;
+  }
+
+  .toolbar-row {
+    gap: 12px;
+    justify-content: center;
+  }
+
+  .toolbar-section {
+    gap: 10px;
+  }
+
+  .quality-control {
+    width: 180px;
+    min-width: 160px;
+  }
+}
+
+.toolbar-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: 90vw;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.primary-row {
+  min-height: 40px;
+}
+
+.secondary-row {
+  padding-top: 4px;
+  border-top: 1px solid #f1f5f9;
 }
 
 .toolbar-section {
   display: flex;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-
-.toolbar-divider {
-  width: 1px;
-  height: 32px;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    rgba(0, 0, 0, 0.1),
-    transparent
-  );
-  margin: 0 6px;
-}
-
-/* 图片列表和预览区域 */
-.images-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  gap: 20px;
-  overflow: visible;
-}
-
-/* 文件信息区域 */
-.files-section {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  min-width: 200px;
+  flex-shrink: 0;
+}
+
+/* Responsive visibility classes */
+.hide-mobile {
+  display: block;
+}
+
+.show-mobile {
+  display: none;
+}
+
+.hide-small {
+  display: inline;
+}
+
+.show-small {
+  display: none;
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .floating-toolbar {
+    padding: 12px 16px;
+    max-width: 98%;
+    align-items: center;
+  }
+
+  .toolbar-row {
+    gap: 8px;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .toolbar-section {
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .hide-mobile {
+    display: none;
+  }
+
+  .show-mobile {
+    display: block;
+  }
+
+  .secondary-row {
+    justify-content: center;
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .options-section {
+    flex-direction: row;
+    gap: 16px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .quality-control {
+    width: 220px;
+    max-width: 250px;
+    min-width: 180px;
+  }
+
+  .exif-option {
+    flex-shrink: 0;
+  }
+}
+
+/* Small screen styles */
+@media (max-width: 640px) {
+  .hide-small {
+    display: none;
+  }
+
+  .show-small {
+    display: inline;
+  }
+
+  .primary-row {
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+    width: 100%;
+  }
+
+  .files-section {
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .files-info {
+    justify-content: center;
+    flex: 1;
+  }
+
+  .action-buttons {
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .stats-section {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .stats-info {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .download-section {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .download-btn-new {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .toolbar-divider {
+    display: none !important;
+  }
+
+  .secondary-row {
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .options-section {
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    align-items: center;
+  }
+
+  .quality-control {
+    width: 100%;
+    max-width: 280px;
+  }
+}
+
+/* Very small screen styles */
+@media (max-width: 480px) {
+  .floating-toolbar {
+    padding: 8px 12px;
+    margin: 0 8px 16px;
+  }
+
+  .action-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .btn-icon {
+    font-size: 14px;
+  }
+
+  .files-count {
+    font-size: 13px;
+  }
+
+  .size-label-mobile {
+    font-size: 12px;
+  }
+
+  .saved-mini {
+    font-size: 12px;
+    padding: 2px 6px;
+  }
+
+  .quality-control {
+    width: 100%;
+    max-width: 200px;
+  }
+
+  .download-btn-new {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
 }
 
 .files-info {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  flex-wrap: wrap;
 }
 
 .files-icon {
-  font-size: 16px;
-  opacity: 0.8;
-}
-
-.files-count {
-  font-size: 12px;
-  color: #374151;
-  font-weight: 500;
+  font-size: 20px;
 }
 
 .compressed-count {
-  font-size: 12px;
-  color: #6b7280;
-  font-weight: 400;
+  color: #718096;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .action-buttons {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .action-btn {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 10px;
-  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
 }
 
-.action-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
-  transition: left 0.5s;
+.action-btn:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e0;
 }
 
-.action-btn:hover::before {
-  left: 100%;
-}
-
-.btn-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  color: #374151;
-  transition: transform 0.2s ease;
-}
-
-.btn-text {
-  font-size: 11px;
-  font-weight: 600;
-  color: #374151;
-}
-
-.add-btn {
-  border-color: rgba(59, 130, 246, 0.2);
-}
-
-.add-btn:hover {
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-  border-color: rgba(59, 130, 246, 0.3);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
-}
-
-.add-btn:hover .btn-icon {
-  transform: scale(1.1);
-  color: #2563eb;
-}
-
-.add-btn:hover .btn-text {
-  color: #2563eb;
-}
-
-.delete-btn {
-  border-color: rgba(239, 68, 68, 0.2);
+.action-btn .btn-icon {
+  font-size: 16px;
 }
 
 .delete-btn:hover {
-  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-  border-color: rgba(239, 68, 68, 0.3);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
+  background-color: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
 }
 
-.delete-btn:hover .btn-icon {
-  transform: scale(1.1);
-  color: #dc2626;
-}
-
-.delete-btn:hover .btn-text {
-  color: #dc2626;
-}
-
-.action-btn:active {
-  transform: translateY(0px) scale(0.98);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-/* 质量控制区域 */
-.quality-section {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 100px;
-}
-
-.quality-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.quality-label {
-  font-size: 11px;
-  color: #6b7280;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.quality-value {
-  font-size: 14px;
-  color: #374151;
-  font-weight: 700;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.quality-slider-wrapper {
-  width: 90px;
-}
-
-.mini-slider {
-  --el-slider-height: 5px;
-  --el-slider-button-size: 16px;
-  --el-slider-main-bg-color: linear-gradient(135deg, #4f46e5, #7c3aed);
-  --el-slider-runway-bg-color: rgba(0, 0, 0, 0.1);
-}
-
-/* 确保 mini-slider 滑轨可点击 */
-.mini-slider :deep(.el-slider__runway) {
-  height: 8px; /* 增加点击区域高度 */
-  cursor: pointer;
-  position: relative;
-  z-index: 1;
-}
-
-/* 确保整个 mini-slider 容器都可交互 */
-.mini-slider :deep(.el-slider) {
-  position: relative;
-  z-index: 1;
-  padding: 10px 0; /* 增加上下padding，扩大点击区域 */
-}
-
-/* 工具栏滑块按钮样式 */
-.mini-slider :deep(.el-slider__button) {
-  background: #4f46e5;
-  border: 2px solid #ffffff;
-  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);
-  cursor: pointer;
-  z-index: 2;
-}
-
-.mini-slider :deep(.el-slider__button:hover) {
-  background: #6366f1;
-  border-color: #ffffff;
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
-  transform: scale(1.1);
-}
-
-/* 确保 mini-slider 按钮包装器也有足够的点击区域 */
-.mini-slider :deep(.el-slider__button-wrapper) {
-  cursor: pointer;
-  z-index: 2;
-}
-
-/* 统计信息区域 */
-.stats-section {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
+.toolbar-divider {
+  width: 1px;
+  height: 32px;
+  background-color: #e2e8f0;
 }
 
 .stats-info {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 45px;
-  min-width: 230px; /* 防止数字变化时工具栏抖动 */
+  gap: 12px;
+  font-size: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .size-label {
-  font-size: 11px;
-  color: #374151;
-  font-weight: 500;
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+  color: #4a5568;
+  white-space: nowrap;
+}
+
+.size-label-mobile {
+  color: #4a5568;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .saved-mini {
-  font-size: 11px;
-  color: #16a34a;
-  font-weight: 700;
-  background: linear-gradient(
-    135deg,
-    rgba(34, 197, 94, 0.1),
-    rgba(34, 197, 94, 0.2)
-  );
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-radius: 12px;
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
-  box-shadow: 0 2px 4px rgba(34, 197, 94, 0.1);
-  transition: all 0.2s ease;
+  font-weight: 600;
+  font-size: 13px;
+  background-color: #dcfce7;
+  color: #16a34a;
 }
 
-.saved-mini.saved-negative {
-  color: #dc2626;
-  background: linear-gradient(
-    135deg,
-    rgba(220, 38, 38, 0.1),
-    rgba(220, 38, 38, 0.2)
-  );
-  border: 1px solid rgba(220, 38, 38, 0.2);
-  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);
+.saved-negative {
+  background-color: #fee2e2;
+  color: #b91c1c;
 }
 
-/* 选项区域 */
 .options-section {
-  justify-content: center;
-  min-width: 120px;
-}
-
-.exif-option {
   display: flex;
   align-items: center;
-  height: 45px;
+  gap: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
-.exif-label {
-  font-size: 12px;
-  color: #374151;
+.exif-option .exif-label {
+  font-size: 14px;
   font-weight: 500;
-  margin-left: 6px;
+  color: #4a5568;
 }
 
 .quality-control {
+  width: 200px;
+  min-width: 180px;
+}
+
+.global-quality-header {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-left: 20px;
-}
-
-/* 全局质量滑块 - 与单个图片保持一致的样式 */
-.global-quality-slider {
-  width: 100%;
-}
-
-.global-quality-slider .el-slider__runway {
-  height: 4px;
-}
-
-.global-quality-slider .el-slider__button {
-  width: 12px;
-  height: 12px;
-}
-
-/* 单个图片质量控制 */
-.image-quality-control {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #f3f4f6;
-}
-
-.quality-label-small {
-  font-size: 11px;
-  color: #6b7280;
-  font-weight: 500;
-  display: block;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 4px;
 }
 
-.image-quality-slider {
-  width: 100%;
+.quality-info-global {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
-.image-quality-slider .el-slider__runway {
-  height: 4px;
+.quality-label-global {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4a5568;
 }
 
-.image-quality-slider .el-slider__button {
-  width: 12px;
-  height: 12px;
+.quality-value-global {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
 }
 
-/* 下载按钮区域 */
+.quality-indicator {
+  width: 60px;
+}
+
+.quality-bar-bg {
+  height: 6px;
+  background-color: #e2e8f0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.quality-bar-fill {
+  height: 100%;
+  background-color: #667eea;
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+
+.global-quality-slider {
+  --el-slider-main-bg-color: #667eea;
+  --el-slider-runway-bg-color: #e2e8f0;
+  height: 24px;
+  margin-top: -8px;
+}
+
 .download-section {
-  justify-content: center;
+  margin-left: auto;
 }
 
 .download-btn-new {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  border: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
   border-radius: 12px;
-  padding: 10px 16px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: #4f46e5;
   color: white;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
-}
-
-.download-btn-new::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.2),
-    transparent
-  );
-  transition: left 0.6s;
-}
-
-.download-btn-new:hover::before {
-  left: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2);
 }
 
 .download-btn-new:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(16, 185, 129, 0.35);
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  background-color: #4338ca;
+  transform: translateY(-1px);
 }
 
-.download-btn-new:active {
-  transform: translateY(0px) scale(0.98);
-}
-
-.download-btn-new.downloading {
-  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+.download-btn-new:disabled {
+  background-color: #a5b4fc;
   cursor: not-allowed;
-  transform: none;
-  box-shadow: 0 2px 8px rgba(107, 114, 128, 0.2);
-}
-
-.download-btn-new.downloading:hover {
-  transform: none;
-  box-shadow: 0 2px 8px rgba(107, 114, 128, 0.2);
 }
 
 .download-btn-content {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .download-icon {
+  font-size: 18px;
+}
+
+/* Images Section */
+.images-section {
+  flex-grow: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-}
-
-.download-text {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* 全屏图片对比区域 */
-.fullscreen-comparison {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  overflow: visible;
-}
-
-.comparison-container-fullscreen {
-  width: 100%;
-  min-height: 450px;
-  border-radius: 16px;
+  gap: 16px;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  position: relative;
 }
 
-.comparison-slider-fullscreen {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  --divider-width: 3px;
-  --divider-color: rgba(255, 255, 255, 0.8);
-  --default-handle-width: 48px;
-  --default-handle-color: rgba(255, 255, 255, 0.9);
-}
-
-.comparison-image-fullscreen {
-  width: 100%;
-  display: contents;
-  height: 450px;
-  /* Safari 兼容性 - object-fit 支持 */
-  -o-object-fit: contain;
-  object-fit: contain;
-  /* 渲染优化 */
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-/* PC端样式优化 - 避免滚动条 */
-@media (min-width: 769px) {
-  .app-container {
-    overflow-y: hidden; /* PC端完全禁用滚动 */
-  }
-
-  .header-section {
-    flex-shrink: 0; /* 确保header不会被压缩 */
-    height: auto;
-    min-height: 120px;
-  }
-
-  /* 当有图片时，进一步优化布局 */
-  .image-display-section {
-    max-height: calc(100vh - 200px);
-    overflow-y: auto;
-  }
-}
-
-/* 中等屏幕下隐藏下载按钮文字 - 仅PC端 */
-@media (max-width: 1110px) and (min-width: 769px) {
-  .download-btn-new .download-text {
-    display: none;
-  }
-
-  .download-btn-new {
-    min-width: 48px;
-    justify-content: center;
-    display: flex;
-  }
-}
-
-/* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
-@media (max-width: 980px) and (min-width: 769px) {
-  .add-btn .btn-text,
-  .delete-btn .btn-text {
-    display: none;
-  }
-
-  .add-btn,
-  .delete-btn {
-    min-width: 36px;
-    justify-content: center;
-  }
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .app-container {
-    overflow-y: auto;
-    overflow-x: hidden;
-    min-height: 100vh;
-    height: auto;
-  }
-
-  .drag-overlay {
-    padding: 20px;
-  }
-
-  .drag-message {
-    padding: 30px;
-  }
-
-  .drag-icon {
-    font-size: 48px;
-  }
-
-  .drag-text {
-    font-size: 18px;
-  }
-
-  .header-section {
-    padding: 40px 20px 20px;
-  }
-
-  .title-container {
-    max-width: 600px;
-  }
-
-  .settings-section-main {
-    padding: 0 20px 20px;
-  }
-
-  .settings-btn-main {
-    font-size: 14px !important;
-    padding: 10px 20px !important;
-  }
-
-  .settings-hint {
-    font-size: 13px;
-  }
-
-  .main-title {
-    font-size: 2.5rem;
-  }
-
-  .subtitle {
-    font-size: 1rem;
-  }
-
-  .floating-toolbar {
-    position: relative;
-    top: auto;
-    left: auto;
-    transform: none;
-    margin: 20px;
-    border-radius: 16px;
-    padding: 12px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-    max-width: none;
-  }
-
-  .toolbar-section {
-    justify-content: center;
-  }
-
+/* Images Section Responsive */
+@media (max-width: 1024px) {
   .images-section {
-    padding: 10px;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .images-grid {
-    padding: 0 20px;
-    height: fit-content;
+    width: 100%;
+    min-width: unset;
+    max-height: 300px;
+    overflow-y: auto;
+    flex-direction: row;
     overflow-x: auto;
-    overflow-y: hidden;
+    padding-bottom: 8px;
   }
 
   .image-card {
-    flex: 0 0 120px;
-    width: 120px;
-  }
-
-  .image-preview {
-    height: 60px;
-  }
-
-  .files-section {
-    align-items: center;
-    flex-direction: column;
-    justify-content: center;
-    min-width: auto;
-    gap: 8px;
-  }
-
-  .files-info {
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .action-buttons {
-    flex-direction: row;
-  }
-
-  .stats-section {
-    align-items: center;
-    flex-direction: row;
-    justify-content: center;
-  }
-
-  .options-section {
-    align-items: center;
-    flex-direction: row;
-    justify-content: center;
-    min-width: auto;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .quality-control {
-    min-width: 140px;
-    margin-left: 0;
-  }
-
-  .image-quality-control {
-    margin-top: 6px;
-    padding-top: 6px;
-  }
-
-  .quality-label-small {
-    font-size: 10px;
-    margin-bottom: 2px;
-  }
-
-  .toolbar-divider {
-    width: 100%;
-    height: 1px;
-    background: linear-gradient(
-      to right,
-      transparent,
-      rgba(0, 0, 0, 0.1),
-      transparent
-    );
-    margin: 0;
-  }
-
-  .stats-info {
-    min-width: 220px; /* 移动端使用较小的最小宽度 */
-    justify-content: center;
-  }
-
-  /* 移动端确保按钮文字显示 */
-  .download-btn-new .download-text {
-    display: inline !important;
-  }
-
-  .add-btn .btn-text,
-  .delete-btn .btn-text {
-    display: inline !important;
-  }
-
-  .download-btn-new {
-    padding: 12px 16px !important;
-    min-width: auto !important;
-    justify-content: flex-start !important;
-  }
-
-  .add-btn,
-  .delete-btn {
-    padding: 8px 12px !important;
-    min-width: auto !important;
-    justify-content: flex-start !important;
-  }
-
-  .upload-btn-hero {
-    min-width: auto;
-    width: 100%;
-    max-width: 350px;
-  }
-
-  .fullscreen-comparison {
-    height: auto;
-    overflow: visible;
-  }
-
-  .comparison-container-fullscreen,
-  .comparison-image-fullscreen {
-    min-height: 250px;
-    height: 300px;
-    display: flex;
-  }
-  .comparison-container-fullscreen {
-    max-height: 70vh;
-    display: flex;
+    min-width: 280px;
+    flex-shrink: 0;
   }
 }
 
-@media (max-width: 480px) {
-  .floating-toolbar {
-    padding: 10px;
-    gap: 10px;
+@media (max-width: 768px) {
+  .images-grid {
+    max-height: 250px;
   }
 
-  .action-btn {
-    padding: 8px 12px;
-  }
-
-  .btn-text {
-    font-size: 12px;
-  }
-
-  .quality-slider-wrapper {
-    width: 80px;
-  }
-
-  .download-btn-new {
-    padding: 12px 16px;
-  }
-
-  .download-text {
-    font-size: 14px;
+  .image-card {
+    min-width: 250px;
   }
 }
 
-/* 全局防闪烁规则 */
-img-comparison-slider,
-img-comparison-slider *,
-.comparison-image-fullscreen,
-.comparison-slider-fullscreen {
-  opacity: 1 !important;
-  visibility: visible !important;
-  transition: none !important;
-  animation: none !important;
-  filter: none !important;
-  -webkit-filter: none !important;
-}
-
-/* 防止浏览器默认的图片加载动画 */
-img-comparison-slider img {
-  opacity: 1 !important;
-  visibility: visible !important;
-  transition: none !important;
-  animation: none !important;
-  filter: none !important;
-  -webkit-filter: none !important;
-}
-
-/* 自定义全屏滑块样式 */
-:deep(.comparison-slider-fullscreen .handle) {
-  background: rgba(255, 255, 255, 0.9);
-  border: 3px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-  transition: all 0.3s ease;
-}
-
-:deep(.comparison-slider-fullscreen .handle:hover) {
-  transform: scale(1.1);
-  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.3);
-}
-
-:deep(.comparison-slider-fullscreen .divider) {
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-}
-
-/* 图片网格 */
 .images-grid {
+  width: 400px;
+  min-width: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.image-card {
   display: flex;
   gap: 12px;
-  height: fit-content;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
+  padding: 12px;
+  background: white;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  /* 自定义滚动条 */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
-}
-
-.images-grid::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
-}
-
-.images-grid::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.images-grid::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 3px;
-}
-
-.images-grid::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-/* 图片卡片 */
-.image-card {
-  background: transparent;
-  border-radius: 8px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.3s ease;
   border: 2px solid transparent;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  flex: 0 0 150px;
-  width: 150px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
 }
 
 .image-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-  border-color: rgba(102, 126, 234, 0.3);
+  border-color: #c7d2fe;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .image-card.active {
   border-color: #667eea;
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
 }
 
-/* 图片预览 */
 .image-preview {
-  position: relative;
-  width: 100%;
+  width: 80px;
   height: 80px;
+  border-radius: 8px;
   overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
 }
 
-.image-preview img,
 .preview-image {
   width: 100%;
   height: 100%;
-  /* Safari 兼容性 - object-fit 支持 */
-  -o-object-fit: cover;
   object-fit: cover;
-  /* 为不支持 object-fit 的旧版浏览器提供回退 */
-  background-size: cover;
-  background-repeat: no-repeat;
-  background-position: center;
-  transition: transform 0.3s ease;
-  /* 确保图片在容器中居中显示 */
-  display: block;
-  margin: 0 auto;
 }
 
-.image-card:hover .image-preview img {
-  transform: scale(1.05);
-}
-
-/* 压缩中覆盖层 */
-.compressing-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(102, 126, 234, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 20px;
-}
-
-/* 错误覆盖层 */
+.compressing-overlay,
 .error-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(239, 68, 68, 0.8);
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.8);
+  color: #4a5568;
+  font-size: 24px;
+}
+
+.error-overlay {
+  background: rgba(239, 68, 68, 0.8);
   color: white;
 }
 
 .error-text {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
 }
 
-/* 图片信息 */
 .image-info {
-  padding: 8px;
-  background: white;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.image-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .image-name {
-  font-size: 11px;
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #334155;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.image-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 10px;
-  color: #6b7280;
-  margin-bottom: 6px;
+.image-format {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background-color: #f1f5f9;
+  color: #64748b;
+  flex-shrink: 0;
 }
 
-/* 图片质量控制 */
-.image-quality-control {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
+.image-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compression-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.size-comparison {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.size-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
-  position: relative; /* 确保正确的层级关系 */
 }
 
-/* 确保按钮包装器不会干扰点击 */
-:deep(.image-quality-control .el-slider__button-wrapper) {
-  top: 50%;
-  transform: translateY(-50%) translateX(-50%);
-  height: fit-content;
-  width: fit-content;
-  display: flex;
-  cursor: pointer;
-  z-index: 3; /* 确保按钮在最上层 */
+.size-label {
+  font-size: 10px;
+  color: #94a3b8;
 }
 
-.quality-label-small {
-  font-size: 9px;
-  color: #6b7280;
+.size-value {
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  display: block;
-  margin-bottom: 4px;
+  color: #475569;
+}
+
+.size-arrow {
+  color: #94a3b8;
+}
+
+.compression-ratio {
+  margin-left: 8px;
+}
+
+.ratio-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background-color: #dcfce7;
+  color: #16a34a;
+}
+
+.ratio-negative {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.image-quality-control {
+  margin-top: 4px;
+}
+
+.quality-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: -4px;
+}
+
+.quality-info {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.quality-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.quality-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.reset-quality-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  transition:
+    color 0.2s,
+    background-color 0.2s;
+}
+
+.reset-quality-btn:hover {
+  color: #475569;
+  background-color: #f1f5f9;
 }
 
 .image-quality-slider {
-  --el-slider-height: 6px;
-  --el-slider-button-size: 12px;
-  --el-slider-main-bg-color: linear-gradient(135deg, #4f46e5, #7c3aed);
-  --el-slider-runway-bg-color: rgba(0, 0, 0, 0.1);
-  width: 100%;
-  max-width: 120px;
+  --el-slider-main-bg-color: #818cf8;
+  --el-slider-runway-bg-color: #e2e8f0;
+  height: 20px;
+  margin-top: -4px;
 }
 
-/* 确保滑轨可点击 */
-.image-quality-slider :deep(.el-slider__runway) {
-  height: 6px; /* 增加点击区域高度 */
+/* 压缩结果列表样式 */
+.compression-results-list {
+  margin-top: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #f1f5f9;
+}
+
+.results-header {
+  margin-bottom: 6px;
+}
+
+.results-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.results-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
   cursor: pointer;
-  position: relative;
-  z-index: 1;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  font-size: 11px;
 }
 
-/* 确保整个滑动条容器都可交互 */
-.image-quality-slider :deep(.el-slider) {
-  position: relative;
-  z-index: 1;
-  padding: 8px 0; /* 增加上下padding，扩大点击区域 */
+.result-item:hover {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
 }
 
-/* 自定义滑块按钮样式 */
-.image-quality-slider :deep(.el-slider__button) {
-  background: #4f46e5;
-  border: 2px solid #ffffff;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
-  cursor: pointer;
-  z-index: 2;
+.result-item.selected {
+  background-color: #ede9fe;
+  border-color: #a78bfa;
+  color: #5b21b6;
 }
 
-.image-quality-slider :deep(.el-slider__button:hover) {
-  background: #6366f1;
-  border-color: #ffffff;
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
-  transform: scale(1.1);
-}
-
-/* 确保按钮包装器也有足够的点击区域 */
-.image-quality-slider :deep(.el-slider__button-wrapper) {
-  cursor: pointer;
-  z-index: 2;
-}
-
-.original-size {
+.result-tool {
+  flex: 1;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.compressed-size {
-  color: #059669;
+.result-size {
   font-weight: 500;
+  color: #475569;
+  min-width: 45px;
+  text-align: right;
 }
 
-.ratio {
+.result-ratio {
+  font-weight: 600;
   color: #16a34a;
-  font-weight: 700;
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
-  transition: color 0.2s ease;
+  min-width: 40px;
+  text-align: right;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background-color: #dcfce7;
 }
 
-.ratio.ratio-negative {
-  color: #dc2626;
+.result-ratio.negative {
+  color: #b91c1c;
+  background-color: #fee2e2;
 }
 
-/* 图片操作按钮 */
 .image-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   display: flex;
   gap: 4px;
-  padding: 6px 8px;
-  background: #f8fafc;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  background: white;
+  padding: 4px;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.image-card:hover .image-actions {
+  opacity: 1;
 }
 
 .action-btn-small {
-  background: white;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 6px;
-  padding: 4px 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  width: 24px;
+  height: 24px;
   display: flex;
-  align-items: center;
   justify-content: center;
-  font-size: 12px;
-  flex: 1;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .action-btn-small:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.download-single {
-  color: #059669;
-  border-color: rgba(5, 150, 105, 0.2);
-}
-
-.download-single:hover {
-  background: #ecfdf5;
-  border-color: rgba(5, 150, 105, 0.4);
-}
-
-.delete-single {
-  color: #dc2626;
-  border-color: rgba(220, 38, 38, 0.2);
+  background: #f1f5f9;
+  color: #334155;
 }
 
 .delete-single:hover {
-  background: #fef2f2;
-  border-color: rgba(220, 38, 38, 0.4);
+  background: #fee2e2;
+  color: #ef4444;
 }
 
-/* 调试信息样式 */
-.debug-info {
-  color: white;
-  padding: 20px;
-  background: rgba(255, 0, 0, 0.3);
-  margin: 10px;
-  border-radius: 8px;
-  font-family: monospace;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.debug-info p {
-  margin: 5px 0;
-}
-
-/* 单图预览 */
-.single-image-preview {
+/* Fullscreen Comparison */
+.fullscreen-comparison {
+  flex-grow: 1;
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
   position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.comparison-container-fullscreen {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.comparison-slider-fullscreen {
+  width: 100%;
+  height: 100%;
+  --divider-width: 2px;
+  --divider-color: #667eea;
+  --handle-size: 40px;
+}
+
+.comparison-image-fullscreen,
+.single-image {
+  max-width: 100%;
+  object-fit: contain;
+  transition: transform 0.2s ease-out;
+}
+.single-image {
+  max-height: 100%;
+}
+
+.single-image-preview {
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.05);
+  align-items: center;
+  position: relative;
 }
 
-.single-image {
-  max-width: 100%;
-  max-height: 100%;
-  /* Safari 兼容性 - object-fit 支持 */
-  -o-object-fit: contain;
-  object-fit: contain;
-}
-
-/* 预览覆盖层 */
 .preview-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(102, 126, 234, 0.9);
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  color: white;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.8);
+  color: #4a5568;
+  text-align: center;
 }
 
 .preview-overlay.error {
-  background: rgba(239, 68, 68, 0.9);
+  background: rgba(239, 68, 68, 0.8);
+  color: white;
 }
 
 .overlay-text {
   font-size: 18px;
   font-weight: 600;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .overlay-subtext {
   font-size: 14px;
-  opacity: 0.9;
-  margin-top: 5px;
-  text-align: center;
-  max-width: 300px;
+  margin-top: 8px;
+  padding: 0 20px;
 }
 
-/* 图片信息覆盖层 */
 .image-overlay-info {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  padding: 12px 20px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
   color: white;
-  padding: 20px;
-  backdrop-filter: blur(10px);
-  transition:
-    opacity 0.2s ease,
-    visibility 0.2s ease;
-  pointer-events: none;
-  z-index: 1000;
+  transition: opacity 0.3s;
 }
 
-/* 全屏模式样式 */
-.fullscreen-comparison.fullscreen-mode {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.95);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.image-overlay-info.mobile-dragging,
+.image-overlay-info.pc-dragging {
+  opacity: 0.2;
 }
 
-.fullscreen-comparison.fullscreen-mode .comparison-container-fullscreen {
-  max-width: 90vw;
-  max-height: 90vh;
-  transition: transform 0.2s ease;
-  transform-origin: center;
-}
-
-.fullscreen-comparison.fullscreen-mode .image-overlay-info {
-  pointer-events: auto;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
-}
-
-/* 覆盖层头部布局 */
 .overlay-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .image-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
-  margin-right: 16px;
 }
 
-/* 图片控制按钮组 */
 .image-controls {
   display: flex;
   align-items: center;
   gap: 8px;
-  pointer-events: auto;
+  flex-shrink: 0;
 }
 
-.image-controls .el-button {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
-  transition: all 0.2s ease;
-}
-
-.image-controls .el-button:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.3);
-  transform: scale(1.05);
-}
-
-.image-controls .el-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.image-controls .el-button:disabled:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: none;
-}
-
-/* 缩放信息显示 */
 .zoom-info {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-  font-weight: 600;
-  min-width: 35px;
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 40px;
   text-align: center;
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
-}
-
-/* 移动端拖拽时隐藏信息层 */
-.image-overlay-info.mobile-dragging {
-  opacity: 0;
-  visibility: hidden;
-}
-
-/* PC端拖拽时隐藏信息层 */
-.image-overlay-info.pc-dragging {
-  opacity: 0;
-  visibility: hidden;
 }
 
 .image-details {
-  display: flex;
-  gap: 12px;
+  margin-top: 8px;
   font-size: 13px;
-  opacity: 0.9;
+  opacity: 0.8;
+  display: flex;
+  gap: 16px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-.image-details .savings {
-  color: #4ade80;
-  font-weight: 700;
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
-  transition: color 0.2s ease;
-}
-
-.image-details .savings.savings-negative {
-  color: #dc2626;
-}
-
-/* 全屏模式下的键盘提示 */
-.fullscreen-comparison.fullscreen-mode::before {
-  content: '提示：按 Esc 退出全屏，+/- 缩放，0 重置，←/→ 切换图片';
-  position: fixed;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 12px;
-  z-index: 10000;
-  opacity: 0;
-  animation: fadeInOut 4s ease-in-out;
-}
-
-@keyframes fadeInOut {
-  0% {
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-/* 响应式调整 */
+/* Image overlay responsive */
 @media (max-width: 768px) {
+  .image-overlay-info {
+    padding: 8px 16px;
+  }
+
+  .overlay-header {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .image-title {
+    font-size: 14px;
+    text-align: center;
+  }
+
   .image-controls {
-    gap: 4px;
+    gap: 6px;
+  }
+
+  .image-controls .el-button {
+    padding: 4px;
+  }
+
+  .zoom-info {
+    font-size: 12px;
+    min-width: 35px;
+  }
+
+  .image-details {
+    font-size: 12px;
+    gap: 8px;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .image-overlay-info {
+    padding: 6px 12px;
+  }
+
+  .image-title {
+    font-size: 13px;
   }
 
   .image-controls .el-button {
     width: 28px;
     height: 28px;
-    font-size: 12px;
   }
 
   .zoom-info {
-    font-size: 10px;
-    min-width: 28px;
+    font-size: 11px;
+    min-width: 30px;
   }
 
-  .overlay-header {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .image-title {
-    margin-right: 0;
-    text-align: center;
+  .image-details {
+    font-size: 11px;
+    gap: 6px;
   }
 }
 
-/* 设置面板样式 */
+.savings {
+  font-weight: 600;
+  color: #a7f3d0;
+}
+
+.savings-negative {
+  color: #fecaca;
+}
+
+/* Settings Dialog */
 .settings-content {
-  padding: 0;
+  padding: 0 10px;
 }
 
 .settings-section {
   margin-bottom: 24px;
 }
 
-.settings-section:last-child {
-  margin-bottom: 0;
-}
-
 .settings-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-  margin: 0 0 8px 0;
 }
 
 .settings-description {
-  color: #666;
   font-size: 14px;
-  margin: 0 0 16px 0;
+  color: #718096;
+  margin-bottom: 16px;
 }
 
 .tool-config-list {
@@ -3835,10 +2876,9 @@ img-comparison-slider img {
 }
 
 .tool-config-item {
-  border: 1px solid #e1e5e9;
-  border-radius: 8px;
   padding: 16px;
-  background: #fafbfc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
 }
 
 .tool-header {
@@ -3854,94 +2894,64 @@ img-comparison-slider img {
   gap: 8px;
 }
 
-.tool-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .tool-icon {
-  color: #667eea;
   font-size: 18px;
 }
 
 .tool-name {
   font-weight: 600;
-  color: #333;
-  font-size: 14px;
 }
 
-.tool-config {
-  margin-top: 12px;
-}
-
-.tool-help {
-  margin-top: 12px;
-  padding: 12px;
-  background: #f0f7ff;
-  border: 1px solid #d1ecf1;
-  border-radius: 6px;
-}
-
-.help-text {
-  margin: 0 0 8px 0;
-  font-size: 13px;
-  color: #333;
-  line-height: 1.5;
-}
-
-.help-link {
-  color: #667eea;
-  text-decoration: none;
-}
-
-.help-link:hover {
-  text-decoration: underline;
-}
-
-.help-note {
-  margin: 0;
-  font-size: 12px;
-  color: #666;
-  font-style: italic;
-}
-
-.add-tool-section {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #e1e5e9;
-}
-
-.usage-info {
-  color: #666;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.usage-info p {
-  margin: 0 0 8px 0;
-}
-
-.usage-info p:last-child {
-  margin-bottom: 0;
-}
-
-.dialog-footer {
+.tool-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 12px;
 }
 
-.settings-btn {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: white;
-  backdrop-filter: blur(10px);
+.add-tool-btn {
+  margin-top: 16px;
+  width: 100%;
 }
 
-.settings-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: translateY(-1px);
+/* macOS specific styles */
+.macos-titlebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  /* Adjust to match your title bar height */
+  z-index: 100;
+}
+
+.titlebar-drag-region {
+  width: 100%;
+  height: 100%;
+  -webkit-app-region: drag;
+}
+
+.macos-header {
+  padding-top: 48px;
+  /* Adjust to provide space for the title bar */
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
 }
 </style>

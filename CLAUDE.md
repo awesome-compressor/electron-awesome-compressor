@@ -39,17 +39,20 @@ This is an Electron application built with Vue 3 + TypeScript using a **Presente
 ### Core Architecture Components
 
 **1. Presenter Pattern (`src/main/presenter/`)**
+
 - `WindowPresenter`: Manages browser windows and window operations
 - `ProtocolPresenter`: Handles custom protocol schemes (`eacompressor://`, `eacompressor-file://`)
 - `NodeCompressPresenter`: Manages image compression using Node.js libraries
 - `Presenter` (main): Coordinates all presenters and provides unified IPC interface
 
 **2. IPC Communication (`src/shared/presenter.d.ts`)**
+
 - Unified interface definitions for all presenter methods
 - Type-safe communication between main and renderer processes
 - Uses `presenter:call` IPC channel with automatic method routing
 
 **3. Renderer Integration (`src/renderer/src/composables/usePresenter.ts`)**
+
 - `usePresenter()` composable provides type-safe access to main process functionality
 - Automatic serialization of complex objects (TypedArrays, ArrayBuffers)
 - Proxy-based method calling with error handling
@@ -57,18 +60,21 @@ This is an Electron application built with Vue 3 + TypeScript using a **Presente
 ### Process Architecture
 
 **Main Process** (`src/main/`):
+
 - Entry point: `src/main/index.ts`
 - Custom protocol registration for file handling
 - Performance optimizations with command line switches
 - Platform-specific configurations
 
 **Renderer Process** (`src/renderer/`):
+
 - Vue 3 SPA with TypeScript
 - Two entry points: main app (`index.html`) and preview window (`preview/index.html`)
 - UnoCSS for styling, Vue Router for navigation
 - Auto-imports for Vue composables and components
 
 **Preload Script** (`src/preload/`):
+
 - Exposes secure IPC bridge to renderer process
 - Type definitions in `index.d.ts`
 
@@ -83,6 +89,7 @@ This is an Electron application built with Vue 3 + TypeScript using a **Presente
 ### Image Compression System
 
 The application uses a multi-engine approach:
+
 - **@awesome-compressor/node-image-compression**: Primary Node.js compression
 - **browser-compress-image**: Browser-based compression fallback
 - **CompressorJS**: Lightweight browser compression
@@ -108,6 +115,7 @@ Compression operations return `NodeCompressionStats` with results from all engin
 ### Protocol Handling
 
 Custom schemes registered:
+
 - `eacompressor://`: Main application protocol
 - `eacompressor-file://`: File handling protocol
 

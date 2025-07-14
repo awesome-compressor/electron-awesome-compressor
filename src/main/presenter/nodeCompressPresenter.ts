@@ -1,4 +1,4 @@
-import { app, utilityProcess, MessageChannelMain, MessagePortMain } from 'electron'
+import { app, utilityProcess, MessageChannelMain, MessagePortMain, BrowserWindow } from 'electron'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import compressionWorkerPath from '../utils/compressionWorker?modulePath'
@@ -75,10 +75,13 @@ export class NodeCompressPresenter {
   private fileStorage: Map<string, StoredFileEntry> = new Map()
   private worker: Electron.UtilityProcess | null = null
   private workerPort: MessagePortMain | null = null
-  private pendingRequests: Map<string, {
-    resolve: (value: any) => void
-    reject: (error: Error) => void
-  }> = new Map()
+  private pendingRequests: Map<
+    string,
+    {
+      resolve: (value: CompressionResponse) => void
+      reject: (error: Error) => void
+    }
+  > = new Map()
   private requestIdCounter = 0
   private workerInitialized = false
 
@@ -88,14 +91,32 @@ export class NodeCompressPresenter {
   }
 
   /**
+   * Send compression progress update to all renderer windows
+   */
+  private notifyCompressionProgress(
+    filename: string,
+    status: 'started' | 'completed' | 'error',
+    data?: unknown
+  ): void {
+    const allWindows = BrowserWindow.getAllWindows()
+    allWindows.forEach((window) => {
+      window.webContents.send('node-compression-progress', {
+        filename,
+        status,
+        data
+      })
+    })
+  }
+
+  /**
    * Initialize node compression presenter
    */
   async init(): Promise<void> {
     console.log('NodeCompressPresenter init')
-    
+
     // Ensure temp directory exists
     await this.ensureTempDir()
-    
+
     // Initialize compression worker
     await this.initCompressionWorker()
   }
@@ -126,20 +147,20 @@ export class NodeCompressPresenter {
     try {
       // Create message channel
       const { port1, port2 } = new MessageChannelMain()
-      
+
       // Fork utility process
       this.worker = utilityProcess.fork(compressionWorkerPath)
-      
+
       // Send port to worker
       this.worker.postMessage({ message: 'init' }, [port1])
-      
+
       // Setup communication
       this.workerPort = port2
       this.setupWorkerCommunication()
-      
+
       // Wait for worker to be ready
       await this.waitForWorkerReady()
-      
+
       this.workerInitialized = true
       console.log('Compression worker initialized')
     } catch (error) {
@@ -151,20 +172,20 @@ export class NodeCompressPresenter {
   private setupWorkerCommunication(): void {
     if (!this.workerPort) return
 
-    this.workerPort.on('message', (e) => {
+    this.workerPort.on('message', (e: Electron.MessageEvent) => {
       const response = e.data as CompressionResponse | { type: 'ready' }
-      
+
       if (response.type === 'ready') {
         // Worker is ready
         return
       }
-      
+
       const workerResponse = response as CompressionResponse
       const pendingRequest = this.pendingRequests.get(workerResponse.requestId)
-      
+
       if (pendingRequest) {
         this.pendingRequests.delete(workerResponse.requestId)
-        
+
         if (workerResponse.type === 'compress-error') {
           pendingRequest.reject(new Error(workerResponse.error || 'Unknown error'))
         } else {
@@ -187,7 +208,7 @@ export class NodeCompressPresenter {
         reject(new Error('Worker ready timeout'))
       }, 10000) // 10 second timeout
 
-      const onMessage = (e: any) => {
+      const onMessage = (e: Electron.MessageEvent): void => {
         if (e.data?.type === 'ready') {
           clearTimeout(timeout)
           this.workerPort?.removeListener('message', onMessage)
@@ -211,7 +232,7 @@ export class NodeCompressPresenter {
       }
 
       this.pendingRequests.set(request.requestId, { resolve, reject })
-      
+
       // Add timeout for requests
       setTimeout(() => {
         if (this.pendingRequests.has(request.requestId)) {
@@ -318,6 +339,9 @@ export class NodeCompressPresenter {
     try {
       console.log(`Starting node compression for: ${filename}`)
 
+      // Notify compression started
+      this.notifyCompressionProgress(filename, 'started')
+
       // Convert Buffer to Uint8Array for transfer to worker
       const imageBytes = new Uint8Array(imageBuffer)
 
@@ -337,7 +361,7 @@ export class NodeCompressPresenter {
       }
 
       const { compressedBuffer, stats } = response.data
-      
+
       console.log(`Node compression completed in ${stats.totalDuration}ms`)
       console.log(`Best tool: ${stats.bestTool}`)
       console.log(`Compression ratio: ${stats.compressionRatio.toFixed(1)}%`)
@@ -348,7 +372,7 @@ export class NodeCompressPresenter {
       // Save the best result first
       const bestOutputFilename = this.generateOutputFilename(filename, stats.bestTool)
       const bestOutputPath = join(this.tempDir, bestOutputFilename)
-      
+
       // Convert Uint8Array back to Buffer for file writing
       const compressedBufferNode = Buffer.from(compressedBuffer)
       await fs.writeFile(bestOutputPath, compressedBufferNode)
@@ -388,15 +412,26 @@ export class NodeCompressPresenter {
         }
       }
 
-      return {
+      const result = {
         bestTool: stats.bestTool,
         bestFileId,
         compressionRatio: stats.compressionRatio,
         totalDuration: stats.totalDuration,
         allResults
       }
+
+      // Notify compression completed
+      this.notifyCompressionProgress(filename, 'completed', result)
+
+      return result
     } catch (error) {
       console.error('Node compression error:', error)
+
+      // Notify compression error
+      this.notifyCompressionProgress(filename, 'error', {
+        error: error instanceof Error ? error.message : String(error)
+      })
+
       throw new Error(
         `Node compression failed: ${error instanceof Error ? error.message : String(error)}`
       )
@@ -555,32 +590,32 @@ export class NodeCompressPresenter {
    */
   async cleanup(): Promise<void> {
     console.log('NodeCompressPresenter cleanup')
-    
+
     try {
       // Clean up all files
       await this.cleanupTempFiles(0)
-      
+
       // Clear pending requests
       for (const [, request] of this.pendingRequests.entries()) {
         request.reject(new Error('Presenter cleanup'))
       }
       this.pendingRequests.clear()
-      
+
       // Close worker port
       if (this.workerPort) {
         this.workerPort.close()
         this.workerPort = null
       }
-      
+
       // Terminate worker process
       if (this.worker) {
         this.worker.kill()
         this.worker = null
       }
-      
+
       // Clear memory storage
       this.fileStorage.clear()
-      
+
       this.workerInitialized = false
       console.log('NodeCompressPresenter cleanup completed')
     } catch (error) {
