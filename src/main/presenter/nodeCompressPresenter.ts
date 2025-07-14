@@ -78,7 +78,7 @@ export class NodeCompressPresenter {
   private pendingRequests: Map<
     string,
     {
-      resolve: (value: any) => void
+      resolve: (value: CompressionResponse) => void
       reject: (error: Error) => void
     }
   > = new Map()
@@ -190,7 +190,7 @@ export class NodeCompressPresenter {
         reject(new Error('Worker ready timeout'))
       }, 10000) // 10 second timeout
 
-      const onMessage = (e: any) => {
+      const onMessage = (e: MessageEvent) => {
         if (e.data?.type === 'ready') {
           clearTimeout(timeout)
           this.workerPort?.removeListener('message', onMessage)
@@ -442,7 +442,7 @@ export class NodeCompressPresenter {
       maxWidth?: number
       maxHeight?: number
       preserveExif?: boolean
-    } = {}
+    } = {},
   ): Promise<NodeCompressionStats> {
     try {
       console.log(`Converting bytes to Buffer for: ${filename}`)

@@ -234,20 +234,7 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElIcon, ElMessage } from 'element-plus'
-import {
-  Loading,
-  Download,
-  CloseBold,
-  FullScreen,
-  Rank,
-  Grid,
-  View,
-  Monitor,
-  Document,
-  SemiSelect,
-  QuestionFilled,
-  Close
-} from '@element-plus/icons-vue'
+import { Loading, Download, QuestionFilled, Close } from '@element-plus/icons-vue'
 import { download } from 'lazy-js-utils'
 import 'img-comparison-slider/dist/styles.css'
 
@@ -283,7 +270,7 @@ const panY = ref(0)
 const isDragging = ref(false)
 const lastMouseX = ref(0)
 const lastMouseY = ref(0)
-const controlsTimeout = ref<NodeJS.Timeout | null>(null)
+const controlsTimeout = ref<number | null>(null)
 
 // 对比模式配置
 const comparisonModes = ['slider', 'sideBySide', 'toggle', 'overlay'] as const

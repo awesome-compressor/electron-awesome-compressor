@@ -178,7 +178,7 @@ process.parentPort.on('message', (e) => {
         }
 
         default: {
-          console.warn('[CompressionWorker] Unknown request type:', (request as any).type)
+          console.warn('[CompressionWorker] Unknown request type:', request)
         }
       }
     } catch (error) {

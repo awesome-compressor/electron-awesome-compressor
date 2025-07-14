@@ -87,16 +87,16 @@ const tempToolConfigs = ref<ToolConfig[]>([])
 // Electron specific - Get presenter instances
 const nodeCompressPresenter = usePresenter('nodeCompressPresenter')
 
-const openSettingsPanel = () => {
+const openSettingsPanel = (): void => {
   tempToolConfigs.value = JSON.parse(JSON.stringify(toolConfigs.value))
   showSettingsPanel.value = true
 }
 
-const closeSettingsPanel = () => {
+const closeSettingsPanel = (): void => {
   showSettingsPanel.value = false
 }
 
-const loadSettings = () => {
+const loadSettings = (): void => {
   try {
     const savedConfigs = localStorage.getItem('toolConfigs')
     if (savedConfigs) {
@@ -111,7 +111,7 @@ const loadSettings = () => {
   globalQualityDragging.value = globalQuality.value
 }
 
-const saveSettings = () => {
+const saveSettings = (): void => {
   try {
     toolConfigs.value = JSON.parse(JSON.stringify(tempToolConfigs.value))
     localStorage.setItem('toolConfigs', JSON.stringify(toolConfigs.value))
@@ -123,7 +123,7 @@ const saveSettings = () => {
   }
 }
 
-const addToolConfig = () => {
+const addToolConfig = (): void => {
   const usedTools = tempToolConfigs.value.map((config) => config.name)
   const availableTool = availableTools.find((tool) => !usedTools.includes(tool))
   if (availableTool) {
@@ -131,23 +131,23 @@ const addToolConfig = () => {
   }
 }
 
-const removeToolConfig = (index: number) => {
+const removeToolConfig = (index: number): void => {
   tempToolConfigs.value.splice(index, 1)
 }
 
 const globalQualityPercent = computed(() => Math.round(globalQualityDragging.value * 100))
 
-const handleGlobalQualityInput = (value: number) => {
+const handleGlobalQualityInput = (value: number): void => {
   globalQualityDragging.value = value / 100
 }
 
-const handleGlobalQualitySliderChange = async (value: number) => {
+const handleGlobalQualitySliderChange = async (value: number): Promise<void> => {
   const newGlobalQuality = value / 100
   globalQualityDragging.value = newGlobalQuality
   await handleGlobalQualityChange(newGlobalQuality)
 }
 
-const handleGlobalQualityChange = async (newGlobalQuality: number) => {
+const handleGlobalQualityChange = async (newGlobalQuality: number): Promise<void> => {
   globalQuality.value = newGlobalQuality
   globalQualityDragging.value = newGlobalQuality
   const recompressPromises = imageItems.value
@@ -162,17 +162,17 @@ const handleGlobalQualityChange = async (newGlobalQuality: number) => {
   await Promise.all(recompressPromises)
 }
 
-const handleImageQualityInput = (item: ImageItem, value: number) => {
+const handleImageQualityInput = (item: ImageItem, value: number): void => {
   item.qualityDragging = value / 100
 }
 
-const handleImageQualitySliderChange = async (item: ImageItem, value: number) => {
+const handleImageQualitySliderChange = async (item: ImageItem, value: number): Promise<void> => {
   const newQuality = value / 100
   item.qualityDragging = newQuality
   await handleImageQualityChange(item, value)
 }
 
-const resetImageQualityToGlobal = async (item: ImageItem) => {
+const resetImageQualityToGlobal = async (item: ImageItem): Promise<void> => {
   item.quality = globalQuality.value
   item.qualityDragging = globalQuality.value
   item.isQualityCustomized = false
@@ -181,7 +181,10 @@ const resetImageQualityToGlobal = async (item: ImageItem) => {
   }
 }
 
-const handleImageQualityChange = async (item: ImageItem, newQualityPercent: number) => {
+const handleImageQualityChange = async (
+  item: ImageItem,
+  newQualityPercent: number
+): Promise<void> => {
   const newQuality = newQualityPercent / 100
   item.quality = newQuality
   item.qualityDragging = newQuality
@@ -292,33 +295,33 @@ onUnmounted(() => {
   })
 })
 
-function handleTouchStart(e: TouchEvent) {
+function handleTouchStart(e: TouchEvent): void {
   const target = e.target as HTMLElement
   if (target.closest('img-comparison-slider') || target.closest('.comparison-slider-fullscreen')) {
     isMobileDragging.value = true
   }
 }
 
-function handleTouchEnd() {
+function handleTouchEnd(): void {
   isMobileDragging.value = false
 }
 
-function handleMouseDown(e: MouseEvent) {
+function handleMouseDown(e: MouseEvent): void {
   const target = e.target as HTMLElement
   if (target.closest('img-comparison-slider') || target.closest('.comparison-slider-fullscreen')) {
     isPCDragging.value = true
   }
 }
 
-function handleMouseUp() {
+function handleMouseUp(): void {
   isPCDragging.value = false
 }
 
-function handleDragOver(e: DragEvent) {
+function handleDragOver(e: DragEvent): void {
   e.preventDefault()
 }
 
-function handleDragEnter(e: DragEvent) {
+function handleDragEnter(e: DragEvent): void {
   e.preventDefault()
   if (e.dataTransfer?.items) {
     const hasImageOrFolder = Array.from(e.dataTransfer.items).some(
@@ -330,7 +333,7 @@ function handleDragEnter(e: DragEvent) {
   }
 }
 
-function handleDragLeave(e: DragEvent) {
+function handleDragLeave(e: DragEvent): void {
   e.preventDefault()
   if (
     !e.relatedTarget ||
@@ -340,7 +343,7 @@ function handleDragLeave(e: DragEvent) {
   }
 }
 
-async function handleDrop(e: DragEvent) {
+async function handleDrop(e: DragEvent): Promise<void> {
   e.preventDefault()
   isDragOver.value = false
   loading.value = true
@@ -366,7 +369,7 @@ async function handleDrop(e: DragEvent) {
   }
 }
 
-async function handlePaste(e: ClipboardEvent) {
+async function handlePaste(e: ClipboardEvent): Promise<void> {
   const activeElement = document.activeElement
   if (
     activeElement &&
@@ -437,7 +440,7 @@ async function processEntry(entry: FileSystemEntry, files: File[]): Promise<void
   }
 }
 
-async function handleFileInputChange() {
+async function handleFileInputChange(): Promise<void> {
   const selectedFiles = Array.from(fileRef.value.files || []) as File[]
   if (selectedFiles.length > 0) {
     loading.value = true
@@ -453,7 +456,7 @@ async function handleFileInputChange() {
   }
 }
 
-async function addNewImages(files: File[]) {
+async function addNewImages(files: File[]): Promise<void> {
   const newItems: ImageItem[] = files.map((file) => ({
     id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     file,
@@ -534,7 +537,7 @@ async function compressWithNode(item: ImageItem): Promise<void> {
   }
 }
 
-async function compressImages(items: ImageItem[] = imageItems.value) {
+async function compressImages(items: ImageItem[] = imageItems.value): Promise<void> {
   isCompressingAll.value = true
   try {
     const batchSize = 3
@@ -547,13 +550,13 @@ async function compressImages(items: ImageItem[] = imageItems.value) {
   }
 }
 
-async function handlePreserveExifChange() {
+async function handlePreserveExifChange(): Promise<void> {
   for (const item of imageItems.value) {
     if (!item.isCompressing) await compressImage(item)
   }
 }
 
-function deleteImage(index: number) {
+function deleteImage(index: number): void {
   const item = imageItems.value[index]
   URL.revokeObjectURL(item.originalUrl)
   if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl)
@@ -563,7 +566,7 @@ function deleteImage(index: number) {
   }
 }
 
-function clearAllImages() {
+function clearAllImages(): void {
   imageItems.value.forEach((item) => {
     URL.revokeObjectURL(item.originalUrl)
     if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl)
@@ -572,7 +575,7 @@ function clearAllImages() {
   currentImageIndex.value = 0
 }
 
-function uploadImages() {
+function uploadImages(): void {
   document.getElementById('file')?.click()
 }
 
@@ -581,7 +584,7 @@ function generateFolderName(): string {
   return `browser-compress-image_${now.toISOString().slice(0, 19).replace(/:/g, '-').replace('T', '_')}`
 }
 
-async function downloadImage(item: ImageItem) {
+async function downloadImage(item: ImageItem): Promise<void> {
   if (!item.compressedUrl) return
   try {
     download(item.compressedUrl, item.file.name)
@@ -591,7 +594,7 @@ async function downloadImage(item: ImageItem) {
   }
 }
 
-async function downloadAllImages() {
+async function downloadAllImages(): Promise<void> {
   if (downloading.value) return
   const downloadableItems = imageItems.value.filter(
     (item) => item.compressedUrl && !item.compressionError
@@ -636,7 +639,7 @@ function formatFileSize(bytes: number): string {
   return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`
 }
 
-function setCurrentImage(index: number) {
+function setCurrentImage(index: number): void {
   currentImageIndex.value = index
   if (isFullscreen.value) {
     nextTick(() => constrainImagePosition())
@@ -645,48 +648,48 @@ function setCurrentImage(index: number) {
   }
 }
 
-function zoomIn() {
+function zoomIn(): void {
   imageZoom.value = Math.min(imageZoom.value * 1.2, 5)
   nextTick(() => constrainImagePosition())
 }
 
-function zoomOut() {
+function zoomOut(): void {
   imageZoom.value = Math.max(imageZoom.value / 1.2, 0.1)
   nextTick(() => constrainImagePosition())
 }
 
-function constrainImagePosition() {
+function constrainImagePosition(): void {
   const bounds = calculateImageBounds()
   imageTransform.value.x = Math.max(bounds.minX, Math.min(bounds.maxX, imageTransform.value.x))
   imageTransform.value.y = Math.max(bounds.minY, Math.min(bounds.maxY, imageTransform.value.y))
 }
 
-function handleImageLoad() {
+function handleImageLoad(): void {
   nextTick(() => constrainImagePosition())
 }
 
-function handleWindowResize() {
+function handleWindowResize(): void {
   if (isFullscreen.value) {
     nextTick(() => constrainImagePosition())
   }
 }
 
-function resetZoom() {
+function resetZoom(): void {
   imageZoom.value = 1
   imageTransform.value = { x: 0, y: 0 }
 }
 
-function resetImageTransform() {
+function resetImageTransform(): void {
   imageZoom.value = 1
   imageTransform.value = { x: 0, y: 0 }
 }
 
-function toggleFullscreen() {
+function toggleFullscreen(): void {
   isFullscreen.value = !isFullscreen.value
   resetImageTransform()
 }
 
-function handleKeydown(e: KeyboardEvent) {
+function handleKeydown(e: KeyboardEvent): void {
   if (!hasImages.value) return
   switch (e.key) {
     case 'Escape':
@@ -727,7 +730,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-function handleWheel(e: WheelEvent) {
+function handleWheel(e: WheelEvent): void {
   if (!isFullscreen.value) return
   e.preventDefault()
   if (e.deltaY > 0) zoomOut()
@@ -738,7 +741,7 @@ let isDragging = false
 let dragStartX = 0
 let dragStartY = 0
 
-function handleImageMouseDown(e: MouseEvent) {
+function handleImageMouseDown(e: MouseEvent): void {
   if (!isFullscreen.value || imageZoom.value <= 1) return
   isDragging = true
   dragStartX = e.clientX
@@ -747,7 +750,7 @@ function handleImageMouseDown(e: MouseEvent) {
   e.stopPropagation()
 }
 
-function calculateImageBounds() {
+function calculateImageBounds(): { maxX: number; maxY: number; minX: number; minY: number } {
   if (!isFullscreen.value || imageZoom.value <= 1) return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
   const container = document.querySelector('.comparison-container-fullscreen') as HTMLElement
   if (!container) return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
@@ -775,7 +778,7 @@ function calculateImageBounds() {
   return { maxX: maxMoveX, maxY: maxMoveY, minX: -maxMoveX, minY: -maxMoveY }
 }
 
-function handleImageMouseMove(e: MouseEvent) {
+function handleImageMouseMove(e: MouseEvent): void {
   if (!isDragging) return
   const newX = e.clientX - dragStartX
   const newY = e.clientY - dragStartY
@@ -784,7 +787,7 @@ function handleImageMouseMove(e: MouseEvent) {
   imageTransform.value.y = Math.max(bounds.minY, Math.min(bounds.maxY, newY))
 }
 
-function handleImageMouseUp() {
+function handleImageMouseUp(): void {
   isDragging = false
 }
 
@@ -811,7 +814,6 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   }
 }
 </script>
-
 <template>
   <div class="app-container" :class="{ 'drag-over': isDragOver }">
     <div v-if="isMacOS" class="macos-titlebar"><div class="titlebar-drag-region" /></div>
@@ -1295,7 +1297,6 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
     </el-dialog>
   </div>
 </template>
-
 <style scoped>
 /* General App Styling */
 .app-container {
