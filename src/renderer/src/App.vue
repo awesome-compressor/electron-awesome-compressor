@@ -73,6 +73,9 @@ const imageZoom = ref(1)
 const isFullscreen = ref(false)
 const imageTransform = ref({ x: 0, y: 0 })
 
+// 用于强制重建img-comparison-slider的key
+const comparisonSliderKey = ref(0)
+
 // 全局配置
 const preserveExif = ref(false)
 const globalQuality = ref(0.6)
@@ -566,12 +569,19 @@ async function compressImage(item: ImageItem): Promise<void> {
     // 添加其他结果的统计信息（注意：这些可能没有实际的blob数据）
     compressResults.allResults.forEach((result, index) => {
       if (result.tool !== compressResults.bestTool) {
+        // 计算压缩率 - 统一使用相同的计算方式确保一致性
+        const compressionRatio = result.compressedSize
+          ? ((item.originalSize - result.compressedSize) / item.originalSize) * 100
+          : result.compressionRatio > 1
+            ? result.compressionRatio
+            : result.compressionRatio * 100
+
         item.compressionResults.push({
           id: `${item.id}-result-${index}-${Date.now()}`,
           url: '', // 没有实际的blob
           tool: result.tool || 'browser',
           size: result.compressedSize || 0,
-          ratio: result.compressionRatio * 100, // 转换为百分比
+          ratio: compressionRatio,
           isSelected: false
         })
       }
@@ -646,7 +656,7 @@ function handleNodeCompressionProgress(progressData: {
   console.log('Node compression progress:', progressData)
 
   const { filename, status, data } = progressData
-  const item = imageItems.value.find(item => item.file.name === filename)
+  const item = imageItems.value.find((item) => item.file.name === filename)
 
   if (!item) return
 
@@ -694,17 +704,8 @@ function selectCompressionResult(item: ImageItem, resultId: string): void {
   })
   item.selectedResultId = resultId
 
-  // Force update the comparison slider by triggering a re-render
-  nextTick(() => {
-    const slider = document.querySelector('img-comparison-slider')
-    if (slider) {
-      // Reset the slider value to ensure proper re-rendering
-      slider.setAttribute('value', '50')
-      // Trigger a custom event to force re-evaluation
-      const event = new CustomEvent('input', { bubbles: true })
-      slider.dispatchEvent(event)
-    }
-  })
+  // Force update the comparison slider by updating the key
+  comparisonSliderKey.value++
 }
 
 function deleteImage(index: number): void {
@@ -803,11 +804,17 @@ function formatFileSize(bytes: number): string {
 
 function setCurrentImage(index: number): void {
   currentImageIndex.value = index
-  if (isFullscreen.value) {
-    nextTick(() => constrainImagePosition())
-  } else {
-    resetImageTransform()
-  }
+
+  // Force img-comparison-slider to rebuild when switching images
+  comparisonSliderKey.value++
+
+  nextTick(() => {
+    if (isFullscreen.value) {
+      constrainImagePosition()
+    } else {
+      resetImageTransform()
+    }
+  })
 }
 
 function zoomIn(): void {
@@ -1008,8 +1015,13 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
         </div>
       </div>
     </div>
-    <GitForkVue link="https://github.com/awesome-compressor/electron-awesome-compressor" position="right" type="corners"
-      content="Star on GitHub" color="#667eea" />
+    <GitForkVue
+      link="https://github.com/awesome-compressor/electron-awesome-compressor"
+      position="right"
+      type="corners"
+      content="Star on GitHub"
+      color="#667eea"
+    />
     <header class="header-section" :class="{ 'macos-header': isMacOS }">
       <div class="title-container">
         <vivid-typing content="Electron Awesome Compressor" class="main-title" />
@@ -1021,8 +1033,14 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
     <main class="main-content">
       <section class="settings-section-main">
         <div class="settings-container">
-          <el-button type="primary" class="settings-btn-main" :icon="Setting" plain @click="openSettingsPanel">Configure
-            Compression Tools</el-button>
+          <el-button
+            type="primary"
+            class="settings-btn-main"
+            :icon="Setting"
+            plain
+            @click="openSettingsPanel"
+            >Configure Compression Tools</el-button
+          >
           <p class="settings-hint">
             Configure API keys and enable compression tools before uploading images
           </p>
@@ -1034,9 +1052,10 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
             <Picture />
           </el-icon>
           <span class="upload-text">Drop, Paste or Click to Upload Images</span>
-          <span class="upload-hint">Support PNG, JPG, JPEG, GIF formats • Multiple files & folders supported • Use
-            Ctrl+V
-            to paste images</span>
+          <span class="upload-hint"
+            >Support PNG, JPG, JPEG, GIF formats • Multiple files & folders supported • Use Ctrl+V
+            to paste images</span
+          >
         </button>
       </section>
       <div v-if="hasImages" class="floating-toolbar">
@@ -1057,7 +1076,11 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                 </div>
                 <span class="btn-text hide-small">Add More</span>
               </button>
-              <button class="action-btn delete-btn" title="Clear All Images" @click="clearAllImages">
+              <button
+                class="action-btn delete-btn"
+                title="Clear All Images"
+                @click="clearAllImages"
+              >
                 <div class="btn-icon">
                   <el-icon>
                     <CloseBold />
@@ -1072,19 +1095,31 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
 
           <div class="toolbar-section stats-section">
             <div class="stats-info">
-              <span class="size-label hide-small">Total: {{ formatFileSize(totalOriginalSize) }} →
-                {{ formatFileSize(totalCompressedSize) }}</span>
-              <span class="size-label-mobile show-small">{{ formatFileSize(totalOriginalSize) }} → {{ formatFileSize(totalCompressedSize) }}</span>
+              <span class="size-label hide-small"
+                >Total: {{ formatFileSize(totalOriginalSize) }} →
+                {{ formatFileSize(totalCompressedSize) }}</span
+              >
+              <span class="size-label-mobile show-small"
+                >{{ formatFileSize(totalOriginalSize) }} →
+                {{ formatFileSize(totalCompressedSize) }}</span
+              >
               <span class="saved-mini" :class="{ 'saved-negative': totalCompressionRatio < 0 }">
-                {{ totalCompressionRatio < 0 ? '+' : '-' }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}% </span>
+                {{ totalCompressionRatio < 0 ? '+' : '-'
+                }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}%
+              </span>
             </div>
           </div>
 
           <div v-if="allCompressed" class="toolbar-divider hide-mobile" />
 
           <div v-if="allCompressed" class="toolbar-section download-section">
-            <button class="download-btn-new" :class="[{ downloading }]" :disabled="downloading"
-              title="Download All Compressed Images" @click="downloadAllImages">
+            <button
+              class="download-btn-new"
+              :class="[{ downloading }]"
+              :disabled="downloading"
+              title="Download All Compressed Images"
+              @click="downloadAllImages"
+            >
               <div class="download-btn-content">
                 <div class="download-icon">
                   <el-icon v-if="!downloading">
@@ -1096,10 +1131,10 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                 </div>
                 <span class="download-text hide-small">{{
                   downloading ? 'Downloading...' : `Download All (${compressedCount})`
-                  }}</span>
+                }}</span>
                 <span class="download-text-mobile show-small">{{
                   downloading ? 'Downloading...' : `Download (${compressedCount})`
-                  }}</span>
+                }}</span>
               </div>
             </button>
           </div>
@@ -1122,21 +1157,37 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                 </div>
                 <div class="quality-indicator hide-small">
                   <div class="quality-bar-bg">
-                    <div class="quality-bar-fill" :style="{ width: globalQualityPercent + '%' }"></div>
+                    <div
+                      class="quality-bar-fill"
+                      :style="{ width: globalQualityPercent + '%' }"
+                    ></div>
                   </div>
                 </div>
               </div>
-              <el-slider :model-value="globalQualityPercent" :max="100" :step="1" :min="1" class="global-quality-slider"
-                :show-tooltip="false" size="small" @input="handleGlobalQualityInput"
-                @change="handleGlobalQualitySliderChange" />
+              <el-slider
+                :model-value="globalQualityPercent"
+                :max="100"
+                :step="1"
+                :min="1"
+                class="global-quality-slider"
+                :show-tooltip="false"
+                size="small"
+                @input="handleGlobalQualityInput"
+                @change="handleGlobalQualitySliderChange"
+              />
             </div>
           </div>
         </div>
       </div>
       <section v-if="hasImages" class="images-section">
         <div class="images-grid">
-          <div v-for="(item, index) in imageItems" :key="item.id" class="image-card"
-            :class="{ active: index === currentImageIndex }" @click="setCurrentImage(index)">
+          <div
+            v-for="(item, index) in imageItems"
+            :key="item.id"
+            class="image-card"
+            :class="{ active: index === currentImageIndex }"
+            @click="setCurrentImage(index)"
+          >
             <div class="image-preview">
               <img class="preview-image" :src="item.originalUrl" :alt="item.file.name" />
               <div v-if="item.isCompressing || item.isNodeCompressing" class="compressing-overlay">
@@ -1157,18 +1208,25 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                 <div class="compression-result">
                   <div class="size-comparison">
                     <div class="size-item">
-                      <span class="size-label">Original</span><span class="size-value original">{{
+                      <span class="size-label">Original</span
+                      ><span class="size-value original">{{
                         formatFileSize(item.originalSize)
-                        }}</span>
+                      }}</span>
                     </div>
                     <div class="size-arrow">
                       <svg width="12" height="8" viewBox="0 0 12 8" fill="none">
-                        <path d="M1 4H11M11 4L8 1M11 4L8 7" stroke="currentColor" stroke-width="1.5"
-                          stroke-linecap="round" stroke-linejoin="round" />
+                        <path
+                          d="M1 4H11M11 4L8 1M11 4L8 7"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
                       </svg>
                     </div>
                     <div class="size-item">
-                      <span class="size-label">Compressed</span><span class="size-value compressed">{{
+                      <span class="size-label">Compressed</span
+                      ><span class="size-value compressed">{{
                         formatFileSize(
                           item.compressionResults.find((r) => r.id === item.selectedResultId)
                             ?.size || 0
@@ -1177,39 +1235,64 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                     </div>
                   </div>
                   <div class="compression-ratio">
-                    <span class="ratio-badge" :class="{
-                      'ratio-negative':
+                    <span
+                      class="ratio-badge"
+                      :class="{
+                        'ratio-negative':
+                          (item.compressionResults.find((r) => r.id === item.selectedResultId)
+                            ?.ratio || 0) < 0
+                      }"
+                      >{{
                         (item.compressionResults.find((r) => r.id === item.selectedResultId)
                           ?.ratio || 0) < 0
-                    }">{{
-                        (item.compressionResults.find((r) => r.id === item.selectedResultId)
-                          ?.ratio || 0) < 0 ? '+' : '-'}}{{Math.abs(item.compressionResults.find((r) => r.id ===
-                        item.selectedResultId)
-                        ?.ratio || 0
-                      ).toFixed(1)
-                      }}%</span>
+                          ? '+'
+                          : '-'
+                      }}{{
+                        Math.abs(
+                          item.compressionResults.find((r) => r.id === item.selectedResultId)
+                            ?.ratio || 0
+                        ).toFixed(1)
+                      }}%</span
+                    >
                   </div>
                 </div>
               </div>
               <div class="image-quality-control">
                 <div class="quality-header">
                   <div class="quality-info">
-                    <span class="quality-label">Quality</span><span class="quality-value">{{
-                      Math.round(item.qualityDragging * 100) }}%</span>
+                    <span class="quality-label">Quality</span
+                    ><span class="quality-value"
+                      >{{ Math.round(item.qualityDragging * 100) }}%</span
+                    >
                   </div>
-                  <button v-if="item.isQualityCustomized" class="reset-quality-btn" title="Reset to global quality"
-                    @click.stop="resetImageQualityToGlobal(item)">
+                  <button
+                    v-if="item.isQualityCustomized"
+                    class="reset-quality-btn"
+                    title="Reset to global quality"
+                    @click.stop="resetImageQualityToGlobal(item)"
+                  >
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                       <path
                         d="M2 6C2 3.79 3.79 2 6 2C7.5 2 8.78 2.88 9.41 4.12M10 6C10 8.21 8.21 10 6 10C4.5 10 3.22 9.12 2.59 7.88M9.5 3.5L9.41 4.12L8.79 4.03"
-                        stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
                     </svg>
                   </button>
                 </div>
-                <el-slider :model-value="Math.round(item.qualityDragging * 100)" :max="100" :step="1" :min="1"
-                  class="image-quality-slider" :show-tooltip="false" size="small"
+                <el-slider
+                  :model-value="Math.round(item.qualityDragging * 100)"
+                  :max="100"
+                  :step="1"
+                  :min="1"
+                  class="image-quality-slider"
+                  :show-tooltip="false"
+                  size="small"
                   @input="(val: number) => handleImageQualityInput(item, val)"
-                  @change="(val: number) => handleImageQualitySliderChange(item, val)" />
+                  @change="(val: number) => handleImageQualitySliderChange(item, val)"
+                />
               </div>
               <!-- 压缩结果列表 -->
               <div v-if="item.compressionResults.length > 1" class="compression-results-list">
@@ -1217,116 +1300,195 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                   <span class="results-title">Results ({{ item.compressionResults.length }})</span>
                 </div>
                 <div class="results-grid">
-                  <div v-for="result in item.compressionResults" :key="result.id" class="result-item"
+                  <div
+                    v-for="result in item.compressionResults"
+                    :key="result.id"
+                    class="result-item"
                     :class="{ selected: result.id === item.selectedResultId }"
-                    @click.stop="selectCompressionResult(item, result.id)">
+                    @click.stop="selectCompressionResult(item, result.id)"
+                  >
                     <div class="result-tool">{{ result.tool }}</div>
                     <div class="result-size">{{ formatFileSize(result.size) }}</div>
                     <div class="result-ratio" :class="{ negative: result.ratio < 0 }">
-                      {{ result.ratio < 0 ? '+' : '-' }}{{ Math.abs(result.ratio).toFixed(1) }}% </div>
+                      {{ result.ratio < 0 ? '+' : '-' }}{{ Math.abs(result.ratio).toFixed(1) }}%
                     </div>
                   </div>
                 </div>
               </div>
-              <div class="image-actions">
-                <button v-if="item.compressionResults.length > 0" class="action-btn-small download-single"
-                  title="Download this image" @click.stop="downloadImage(item)">
-                  <el-icon>
-                    <Download />
-                  </el-icon>
-                </button>
-                <button v-if="item.compressionResults.length > 0" class="action-btn-small preview-single"
-                  title="Preview comparison" @click.stop="previewCompressionResult(item)">
-                  <el-icon>
-                    <Picture />
-                  </el-icon>
-                </button>
-                <button class="action-btn-small delete-single" title="Remove this image"
-                  @click.stop="deleteImage(index)">
-                  <el-icon>
-                    <CloseBold />
-                  </el-icon>
-                </button>
-              </div>
+            </div>
+            <div class="image-actions">
+              <button
+                v-if="item.compressionResults.length > 0"
+                class="action-btn-small download-single"
+                title="Download this image"
+                @click.stop="downloadImage(item)"
+              >
+                <el-icon>
+                  <Download />
+                </el-icon>
+              </button>
+              <button
+                v-if="item.compressionResults.length > 0"
+                class="action-btn-small preview-single"
+                title="Preview comparison"
+                @click.stop="previewCompressionResult(item)"
+              >
+                <el-icon>
+                  <Picture />
+                </el-icon>
+              </button>
+              <button
+                class="action-btn-small delete-single"
+                title="Remove this image"
+                @click.stop="deleteImage(index)"
+              >
+                <el-icon>
+                  <CloseBold />
+                </el-icon>
+              </button>
             </div>
           </div>
-          <div v-if="currentImage" class="fullscreen-comparison" :class="{ 'fullscreen-mode': isFullscreen }">
-            <div class="comparison-container-fullscreen" :style="{ cursor: imageZoom > 1 ? 'move' : 'default' }"
-              @wheel="handleWheel" @mousedown="handleImageMouseDown">
-              <img-comparison-slider v-if="currentImage.originalUrl && selectedResult && selectedResult.url"
-                :key="`${currentImage.id}-${selectedResult.id}`"
-                class="comparison-slider-fullscreen" value="50">
-                <!-- eslint-disable -->
-                <img slot="first" :src="currentImage.originalUrl" alt="Original Image"
-                  class="comparison-image-fullscreen" :style="{
-                    transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px),transformOrigin: 'center center'`
-                  }" @load="handleImageLoad" />
-                <img slot="second" :src="selectedResult.url" alt="Compressed Image" class="comparison-image-fullscreen"
-                  :style="{
-                    transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px),transformOrigin: 'center center'`
-                  }" @load="handleImageLoad" />
-                <!-- eslint-enable -->
-              </img-comparison-slider>
-              <div v-else-if="currentImage.originalUrl" class="single-image-preview">
-                <img :src="currentImage.originalUrl" :alt="currentImage.file.name" class="single-image" :style="{
+        </div>
+        <div
+          v-if="currentImage"
+          class="fullscreen-comparison"
+          :class="{ 'fullscreen-mode': isFullscreen }"
+        >
+          <div
+            class="comparison-container-fullscreen"
+            :style="{ cursor: imageZoom > 1 ? 'move' : 'default' }"
+            @wheel="handleWheel"
+            @mousedown="handleImageMouseDown"
+          >
+            <img-comparison-slider
+              v-if="currentImage.originalUrl && selectedResult && selectedResult.url"
+              :key="`${currentImage.id}-${selectedResult.id}-${comparisonSliderKey}`"
+              class="comparison-slider-fullscreen"
+              value="50"
+            >
+              <!-- eslint-disable -->
+              <img
+                slot="first"
+                :src="currentImage.originalUrl"
+                alt="Original Image"
+                class="comparison-image-fullscreen"
+                :style="{
+                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px),transformOrigin: 'center center'`
+                }"
+                @load="handleImageLoad"
+              />
+              <img
+                slot="second"
+                :src="selectedResult.url"
+                alt="Compressed Image"
+                class="comparison-image-fullscreen"
+                :style="{
+                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px),transformOrigin: 'center center'`
+                }"
+                @load="handleImageLoad"
+              />
+              <!-- eslint-enable -->
+            </img-comparison-slider>
+            <div v-else-if="currentImage.originalUrl" class="single-image-preview">
+              <img
+                :src="currentImage.originalUrl"
+                :alt="currentImage.file.name"
+                class="single-image"
+                :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px),transformOrigin: 'center center',`
-                }" @load="handleImageLoad" />
-                <div v-if="currentImage.isCompressing || currentImage.isNodeCompressing" class="preview-overlay">
-                  <el-icon class="is-loading" size="30px">
-                    <Loading />
-                  </el-icon>
-                  <div class="overlay-text">Compressing...</div>
-                </div>
-                <div v-if="currentImage.compressionError" class="preview-overlay error">
-                  <div class="overlay-text">Compression Error</div>
-                  <div class="overlay-subtext">{{ currentImage.compressionError }}</div>
+                }"
+                @load="handleImageLoad"
+              />
+              <div
+                v-if="currentImage.isCompressing || currentImage.isNodeCompressing"
+                class="preview-overlay"
+              >
+                <el-icon class="is-loading" size="30px">
+                  <Loading />
+                </el-icon>
+                <div class="overlay-text">Compressing...</div>
+              </div>
+              <div v-if="currentImage.compressionError" class="preview-overlay error">
+                <div class="overlay-text">Compression Error</div>
+                <div class="overlay-subtext">{{ currentImage.compressionError }}</div>
+              </div>
+            </div>
+            <div
+              class="image-overlay-info"
+              :class="{ 'mobile-dragging': isMobileDragging, 'pc-dragging': isPCDragging }"
+            >
+              <div class="overlay-header">
+                <div class="image-title">{{ currentImage.file.name }}</div>
+                <div class="image-controls">
+                  <el-button
+                    circle
+                    size="small"
+                    :disabled="imageZoom <= 0.1"
+                    title="缩小 (-)
+                  "
+                    @click="zoomOut"
+                    ><el-icon> <ZoomOut /> </el-icon
+                  ></el-button>
+                  <span class="zoom-info">{{ Math.round(imageZoom * 100) }}%</span>
+                  <el-button
+                    circle
+                    size="small"
+                    :disabled="imageZoom >= 5"
+                    title="放大 (+)"
+                    @click="zoomIn"
+                    ><el-icon> <ZoomIn /> </el-icon
+                  ></el-button>
+                  <el-button circle size="small" title="重置缩放 (0)" @click="resetZoom"
+                    ><el-icon> <Aim /> </el-icon
+                  ></el-button>
+                  <el-button
+                    circle
+                    size="small"
+                    :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
+                    @click="toggleFullscreen"
+                    ><el-icon> <FullScreen /> </el-icon
+                  ></el-button>
                 </div>
               </div>
-              <div class="image-overlay-info"
-                :class="{ 'mobile-dragging': isMobileDragging, 'pc-dragging': isPCDragging }">
-                <div class="overlay-header">
-                  <div class="image-title">{{ currentImage.file.name }}</div>
-                  <div class="image-controls">
-                    <el-button circle size="small" :disabled="imageZoom <= 0.1" title="缩小 (-)
-                  " @click="zoomOut"><el-icon>
-                        <ZoomOut />
-                      </el-icon></el-button>
-                    <span class="zoom-info">{{ Math.round(imageZoom * 100) }}%</span>
-                    <el-button circle size="small" :disabled="imageZoom >= 5" title="放大 (+)" @click="zoomIn"><el-icon>
-                        <ZoomIn />
-                      </el-icon></el-button>
-                    <el-button circle size="small" title="重置缩放 (0)" @click="resetZoom"><el-icon>
-                        <Aim />
-                      </el-icon></el-button>
-                    <el-button circle size="small" :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
-                      @click="toggleFullscreen"><el-icon>
-                        <FullScreen />
-                      </el-icon></el-button>
-                  </div>
-                </div>
-                <div class="image-details">
-                  <span>{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span>
-                  <span>Quality: {{ Math.round(currentImage.quality * 100) }}%</span>
-                  <span>{{ formatFileSize(currentImage.originalSize) }}</span>
-                  <span v-if="selectedResult"> → {{ formatFileSize(selectedResult.size) }}</span>
-                  <span v-if="selectedResult" class="savings"
-                    :class="{ 'savings-negative': selectedResult.ratio < 0 }">({{ selectedResult.ratio < 0 ? '+' : '-'
-                      }}{{ Math.abs(selectedResult.ratio).toFixed(1) }}%)</span>
-                </div>
+              <div class="image-details">
+                <span>{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span>
+                <span>Quality: {{ Math.round(currentImage.quality * 100) }}%</span>
+                <span>{{ formatFileSize(currentImage.originalSize) }}</span>
+                <span v-if="selectedResult"> → {{ formatFileSize(selectedResult.size) }}</span>
+                <span
+                  v-if="selectedResult"
+                  class="savings"
+                  :class="{ 'savings-negative': selectedResult.ratio < 0 }"
+                  >({{ selectedResult.ratio < 0 ? '+' : '-'
+                  }}{{ Math.abs(selectedResult.ratio).toFixed(1) }}%)</span
+                >
               </div>
             </div>
           </div>
+        </div>
       </section>
     </main>
-    <input id="file" ref="fileRef" type="file" accept="image/png,image/jpg,image/jpeg,image/gif,image/webp" multiple
-      hidden />
-    <el-dialog v-model="showSettingsPanel" title="Settings" width="600px" :close-on-click-modal="false">
+    <input
+      id="file"
+      ref="fileRef"
+      type="file"
+      accept="image/png,image/jpg,image/jpeg,image/gif,image/webp"
+      multiple
+      hidden
+    />
+    <el-dialog
+      v-model="showSettingsPanel"
+      title="Settings"
+      width="600px"
+      :close-on-click-modal="false"
+    >
       <div class="settings-content">
         <div class="settings-section">
           <h3 class="settings-title">
             <el-icon>
               <Key />
-            </el-icon> Tool Configurations
+            </el-icon>
+            Tool Configurations
           </h3>
           <p class="settings-description">
             Configure API keys and settings for different compression tools.
@@ -1341,34 +1503,55 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                   <span class="tool-name">{{ config.name.toUpperCase() }}</span>
                   <el-tag :type="config.enabled && config.key ? 'success' : 'info'" size="small">{{
                     config.enabled && config.key ? 'Enabled' : 'Disabled'
-                    }}</el-tag>
+                  }}</el-tag>
                 </div>
                 <div class="tool-actions">
                   <el-switch v-model="config.enabled" :disabled="!config.key.trim()" />
-                  <el-button v-if="tempToolConfigs.length > 1" type="danger" size="small" :icon="Delete" circle
-                    @click="removeToolConfig(index)" />
+                  <el-button
+                    v-if="tempToolConfigs.length > 1"
+                    type="danger"
+                    size="small"
+                    :icon="Delete"
+                    circle
+                    @click="removeToolConfig(index)"
+                  />
                 </div>
               </div>
               <div class="tool-config">
                 <el-form-item label="Tool">
                   <el-select v-model="config.name" placeholder="Select a tool">
-                    <el-option v-for="tool in availableTools" :key="tool" :label="tool.toUpperCase()" :value="tool" />
+                    <el-option
+                      v-for="tool in availableTools"
+                      :key="tool"
+                      :label="tool.toUpperCase()"
+                      :value="tool"
+                    />
                   </el-select>
                 </el-form-item>
                 <el-form-item label="API Key">
-                  <el-input v-model="config.key" type="password" placeholder="Enter your API key" show-password
-                    clearable>
-                    <template #prepend><el-icon>
-                        <Key />
-                      </el-icon></template>
+                  <el-input
+                    v-model="config.key"
+                    type="password"
+                    placeholder="Enter your API key"
+                    show-password
+                    clearable
+                  >
+                    <template #prepend
+                      ><el-icon> <Key /> </el-icon
+                    ></template>
                   </el-input>
                 </el-form-item>
               </div>
             </div>
           </div>
-          <el-button type="primary" :icon="Plus" :disabled="!canAddToolConfig" class="add-tool-btn"
-            @click="addToolConfig">Add
-            Tool</el-button>
+          <el-button
+            type="primary"
+            :icon="Plus"
+            :disabled="!canAddToolConfig"
+            class="add-tool-btn"
+            @click="addToolConfig"
+            >Add Tool</el-button
+          >
         </div>
       </div>
       <template #footer>
@@ -1437,7 +1620,6 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     transform: scale(1);
@@ -2488,7 +2670,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   object-fit: contain;
   transition: transform 0.2s ease-out;
 }
-.single-image{
+.single-image {
   max-height: 100%;
 }
 

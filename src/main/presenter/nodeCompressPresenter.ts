@@ -93,9 +93,13 @@ export class NodeCompressPresenter {
   /**
    * Send compression progress update to all renderer windows
    */
-  private notifyCompressionProgress(filename: string, status: 'started' | 'completed' | 'error', data?: unknown): void {
+  private notifyCompressionProgress(
+    filename: string,
+    status: 'started' | 'completed' | 'error',
+    data?: unknown
+  ): void {
     const allWindows = BrowserWindow.getAllWindows()
-    allWindows.forEach(window => {
+    allWindows.forEach((window) => {
       window.webContents.send('node-compression-progress', {
         filename,
         status,
@@ -424,7 +428,9 @@ export class NodeCompressPresenter {
       console.error('Node compression error:', error)
 
       // Notify compression error
-      this.notifyCompressionProgress(filename, 'error', { error: error instanceof Error ? error.message : String(error) })
+      this.notifyCompressionProgress(filename, 'error', {
+        error: error instanceof Error ? error.message : String(error)
+      })
 
       throw new Error(
         `Node compression failed: ${error instanceof Error ? error.message : String(error)}`

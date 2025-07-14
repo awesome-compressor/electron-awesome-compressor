@@ -102,11 +102,14 @@ class CompressionWorker {
 
       // Calculate compression ratio correctly: (originalSize - compressedSize) / originalSize * 100
       const processedResults = compressResults.allResults.map((result) => {
-        const actualCompressionRatio = result.compressedSize > 0
-          ? ((result.originalSize - result.compressedSize) / result.originalSize) * 100
-          : 0
+        const actualCompressionRatio =
+          result.compressedSize > 0
+            ? ((result.originalSize - result.compressedSize) / result.originalSize) * 100
+            : 0
 
-        console.log(`[CompressionWorker] ${result.tool}: ${result.originalSize} -> ${result.compressedSize} bytes, ${actualCompressionRatio.toFixed(1)}% reduction, ${result.duration}ms`)
+        console.log(
+          `[CompressionWorker] ${result.tool}: ${result.originalSize} -> ${result.compressedSize} bytes, ${actualCompressionRatio.toFixed(1)}% reduction, ${result.duration}ms`
+        )
 
         return {
           tool: result.tool,
