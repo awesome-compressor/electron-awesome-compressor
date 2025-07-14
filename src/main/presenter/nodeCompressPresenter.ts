@@ -1,4 +1,4 @@
-import { app, utilityProcess, MessageChannelMain, MessagePortMain } from 'electron'
+import { app, utilityProcess, MessageChannelMain, MessagePortMain, BrowserWindow } from 'electron'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import compressionWorkerPath from '../utils/compressionWorker?modulePath'
@@ -88,6 +88,20 @@ export class NodeCompressPresenter {
   constructor() {
     console.log('NodeCompressPresenter constructor')
     this.tempDir = app.getPath('temp')
+  }
+
+  /**
+   * Send compression progress update to all renderer windows
+   */
+  private notifyCompressionProgress(filename: string, status: 'started' | 'completed' | 'error', data?: unknown): void {
+    const allWindows = BrowserWindow.getAllWindows()
+    allWindows.forEach(window => {
+      window.webContents.send('node-compression-progress', {
+        filename,
+        status,
+        data
+      })
+    })
   }
 
   /**
@@ -321,6 +335,9 @@ export class NodeCompressPresenter {
     try {
       console.log(`Starting node compression for: ${filename}`)
 
+      // Notify compression started
+      this.notifyCompressionProgress(filename, 'started')
+
       // Convert Buffer to Uint8Array for transfer to worker
       const imageBytes = new Uint8Array(imageBuffer)
 
@@ -391,15 +408,24 @@ export class NodeCompressPresenter {
         }
       }
 
-      return {
+      const result = {
         bestTool: stats.bestTool,
         bestFileId,
         compressionRatio: stats.compressionRatio,
         totalDuration: stats.totalDuration,
         allResults
       }
+
+      // Notify compression completed
+      this.notifyCompressionProgress(filename, 'completed', result)
+
+      return result
     } catch (error) {
       console.error('Node compression error:', error)
+
+      // Notify compression error
+      this.notifyCompressionProgress(filename, 'error', { error: error instanceof Error ? error.message : String(error) })
+
       throw new Error(
         `Node compression failed: ${error instanceof Error ? error.message : String(error)}`
       )
