@@ -30,15 +30,24 @@ import('img-comparison-slider')
 // 检测是否为 macOS
 const isMacOS = ref(false)
 
+// 压缩结果接口
+interface CompressionResult {
+  id: string
+  url: string
+  tool: string
+  size: number
+  ratio: number
+  isSelected: boolean
+}
+
 // 单个图片的状态接口 (Merged)
 interface ImageItem {
   id: string
   file: File
   originalUrl: string
-  compressedUrl?: string
+  compressionResults: CompressionResult[]
+  selectedResultId?: string
   originalSize: number
-  compressedSize?: number
-  compressionRatio?: number
   isCompressing: boolean
   compressionError?: string
   quality: number // 每张图片独立的质量设置
@@ -233,18 +242,29 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
 
 const hasImages = computed(() => imageItems.value.length > 0)
 const currentImage = computed(() => imageItems.value[currentImageIndex.value])
+const selectedResult = computed(() => {
+  if (!currentImage.value || !currentImage.value.selectedResultId) return null
+  return currentImage.value.compressionResults.find(
+    (result) => result.id === currentImage.value.selectedResultId
+  )
+})
 const totalOriginalSize = computed(() =>
   imageItems.value.reduce((sum, item) => sum + item.originalSize, 0)
 )
 const totalCompressedSize = computed(() =>
-  imageItems.value.reduce((sum, item) => sum + (item.compressedSize || 0), 0)
+  imageItems.value.reduce((sum, item) => {
+    const selectedResult = item.compressionResults.find((r) => r.id === item.selectedResultId)
+    return sum + (selectedResult?.size || 0)
+  }, 0)
 )
 const totalCompressionRatio = computed(() => {
   if (totalOriginalSize.value === 0) return 0
   return ((totalOriginalSize.value - totalCompressedSize.value) / totalOriginalSize.value) * 100
 })
 const compressedCount = computed(
-  () => imageItems.value.filter((item) => item.compressedUrl && !item.compressionError).length
+  () =>
+    imageItems.value.filter((item) => item.compressionResults.length > 0 && !item.compressionError)
+      .length
 )
 const allCompressed = computed(
   () => imageItems.value.length > 0 && compressedCount.value === imageItems.value.length
@@ -291,7 +311,11 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleWindowResize)
   imageItems.value.forEach((item) => {
     URL.revokeObjectURL(item.originalUrl)
-    if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl)
+    item.compressionResults.forEach((result) => {
+      if (result.url.startsWith('blob:')) {
+        URL.revokeObjectURL(result.url)
+      }
+    })
   })
 })
 
@@ -462,6 +486,7 @@ async function addNewImages(files: File[]): Promise<void> {
     file,
     originalUrl: URL.createObjectURL(file),
     originalSize: file.size,
+    compressionResults: [],
     isCompressing: false,
     quality: globalQuality.value,
     isQualityCustomized: false,
@@ -477,24 +502,68 @@ async function compressImage(item: ImageItem): Promise<void> {
   if (item.isCompressing) return
   item.isCompressing = true
   item.compressionError = undefined
+
   try {
     const enabledToolConfigs = toolConfigs.value.filter(
       (config) => config.enabled && config.key.trim()
     )
-    const compressedBlob = await compress(item.file, {
+
+    // 调用压缩函数获取所有结果
+    const compressResults = await compress(item.file, {
       quality: item.quality,
       type: 'blob',
       preserveExif: preserveExif.value,
-      toolConfigs: enabledToolConfigs
+      toolConfigs: enabledToolConfigs,
+      returnAllResults: true // 返回所有结果
     })
-    if (!compressedBlob) {
-      ElMessage.error('Size is too large')
+
+    if (
+      !compressResults ||
+      !compressResults.allResults ||
+      compressResults.allResults.length === 0
+    ) {
+      ElMessage.error('Compression failed')
       return
     }
-    if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl)
-    item.compressedUrl = URL.createObjectURL(compressedBlob)
-    item.compressedSize = compressedBlob.size
-    item.compressionRatio = ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+
+    // 清理旧的结果URL
+    item.compressionResults.forEach((result) => {
+      if (result.url.startsWith('blob:')) {
+        URL.revokeObjectURL(result.url)
+      }
+    })
+
+    // 转换为CompressionResult格式
+    item.compressionResults = []
+
+    // 如果有最佳结果，先添加它
+    if (compressResults.bestResult) {
+      const bestBlob = new Blob([compressResults.bestResult], { type: item.file.type })
+      const bestResultData = {
+        id: `${item.id}-best-${Date.now()}`,
+        url: URL.createObjectURL(bestBlob),
+        tool: compressResults.bestTool || 'browser',
+        size: bestBlob.size,
+        ratio: ((item.originalSize - bestBlob.size) / item.originalSize) * 100,
+        isSelected: true
+      }
+      item.compressionResults.push(bestResultData)
+      item.selectedResultId = bestResultData.id
+    }
+
+    // 添加其他结果的统计信息（注意：这些可能没有实际的blob数据）
+    compressResults.allResults.forEach((result, index) => {
+      if (result.tool !== compressResults.bestTool) {
+        item.compressionResults.push({
+          id: `${item.id}-result-${index}-${Date.now()}`,
+          url: '', // 没有实际的blob
+          tool: result.tool || 'browser',
+          size: result.compressedSize || 0,
+          ratio: result.compressionRatio * 100, // 转换为百分比
+          isSelected: false
+        })
+      }
+    })
 
     // Electron specific: also try node compression
     if (nodeCompressPresenter && !item.nodeCompressionStarted) {
@@ -519,15 +588,32 @@ async function compressWithNode(item: ImageItem): Promise<void> {
       quality: item.quality,
       preserveExif: false
     })
-    if (result && result.bestTool && result.bestFileId) {
-      const fileId = result.bestFileId
-      const compressedSize = result.allResults.length > 0 ? result.allResults[0].compressedSize : 0
-      const nodeResultUrl = `eacompressor-file://getFile?id=${fileId}`
-      if (result.compressionRatio > (item.compressionRatio || 0)) {
-        if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl)
-        item.compressedUrl = nodeResultUrl
-        item.compressedSize = compressedSize
-        item.compressionRatio = result.compressionRatio
+
+    if (result && result.allResults && result.allResults.length > 0) {
+      // 添加所有node压缩结果
+      const nodeResults = result.allResults.map((nodeResult, index) => ({
+        id: `${item.id}-node-${nodeResult.tool}-${index}-${Date.now()}`,
+        url: `eacompressor-file://getFile?id=${nodeResult.fileId}`,
+        tool: `${nodeResult.tool} (Node)`,
+        size: nodeResult.compressedSize,
+        ratio: nodeResult.compressionRatio,
+        isSelected: false
+      }))
+
+      item.compressionResults.push(...nodeResults)
+
+      // 检查是否有更好的node结果
+      const currentSelected = item.compressionResults.find((r) => r.id === item.selectedResultId)
+      const bestNodeResult = nodeResults.reduce((best, current) =>
+        current.ratio > best.ratio ? current : best
+      )
+
+      if (!currentSelected || bestNodeResult.ratio > currentSelected.ratio) {
+        // 取消当前选择
+        if (currentSelected) currentSelected.isSelected = false
+        // 选择最好的node结果
+        bestNodeResult.isSelected = true
+        item.selectedResultId = bestNodeResult.id
       }
     }
   } catch (error) {
@@ -556,10 +642,23 @@ async function handlePreserveExifChange(): Promise<void> {
   }
 }
 
+function selectCompressionResult(item: ImageItem, resultId: string): void {
+  // 取消当前选择
+  item.compressionResults.forEach((result) => {
+    result.isSelected = result.id === resultId
+  })
+  item.selectedResultId = resultId
+}
+
 function deleteImage(index: number): void {
   const item = imageItems.value[index]
   URL.revokeObjectURL(item.originalUrl)
-  if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl)
+  // 清理所有压缩结果的URL
+  item.compressionResults.forEach((result) => {
+    if (result.url.startsWith('blob:')) {
+      URL.revokeObjectURL(result.url)
+    }
+  })
   imageItems.value.splice(index, 1)
   if (currentImageIndex.value >= imageItems.value.length) {
     currentImageIndex.value = Math.max(0, imageItems.value.length - 1)
@@ -569,7 +668,11 @@ function deleteImage(index: number): void {
 function clearAllImages(): void {
   imageItems.value.forEach((item) => {
     URL.revokeObjectURL(item.originalUrl)
-    if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl)
+    item.compressionResults.forEach((result) => {
+      if (result.url.startsWith('blob:')) {
+        URL.revokeObjectURL(result.url)
+      }
+    })
   })
   imageItems.value = []
   currentImageIndex.value = 0
@@ -585,9 +688,10 @@ function generateFolderName(): string {
 }
 
 async function downloadImage(item: ImageItem): Promise<void> {
-  if (!item.compressedUrl) return
+  const selectedResult = item.compressionResults.find((r) => r.id === item.selectedResultId)
+  if (!selectedResult) return
   try {
-    download(item.compressedUrl, item.file.name)
+    download(selectedResult.url, item.file.name)
     ElMessage.success(`Downloaded: ${item.file.name}`)
   } catch {
     ElMessage.error('Download failed.')
@@ -597,7 +701,7 @@ async function downloadImage(item: ImageItem): Promise<void> {
 async function downloadAllImages(): Promise<void> {
   if (downloading.value) return
   const downloadableItems = imageItems.value.filter(
-    (item) => item.compressedUrl && !item.compressionError
+    (item) => item.compressionResults.length > 0 && !item.compressionError && item.selectedResultId
   )
   if (downloadableItems.length === 0) {
     ElMessage.warning('No compressed images to download')
@@ -611,8 +715,9 @@ async function downloadAllImages(): Promise<void> {
     if (!folder) throw new Error('Failed to create folder in ZIP')
     await new Promise((resolve) => setTimeout(resolve, 300))
     for (const item of downloadableItems) {
-      if (item.compressedUrl) {
-        const response = await fetch(item.compressedUrl)
+      const selectedResult = item.compressionResults.find((r) => r.id === item.selectedResultId)
+      if (selectedResult) {
+        const response = await fetch(selectedResult.url)
         const blob = await response.blob()
         folder.file(item.file.name, blob)
       }
@@ -793,13 +898,19 @@ function handleImageMouseUp(): void {
 
 async function previewCompressionResult(item: ImageItem): Promise<void> {
   try {
+    const selectedResult = item.compressionResults.find((r) => r.id === item.selectedResultId)
+    if (!selectedResult) {
+      ElMessage.warning('No compression result selected')
+      return
+    }
+
     const previewData = {
       originalImage: { url: item.originalUrl, name: item.file.name, size: item.originalSize },
       compressedImage: {
-        url: item.compressedUrl || '',
-        tool: 'best',
-        size: item.compressedSize || 0,
-        ratio: item.compressionRatio || 0
+        url: selectedResult.url,
+        tool: selectedResult.tool,
+        size: selectedResult.size,
+        ratio: selectedResult.ratio
       }
     }
     await window.electron.ipcRenderer.invoke(
@@ -870,7 +981,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
           <el-icon class="upload-icon"><Picture /></el-icon>
           <span class="upload-text">Drop, Paste or Click to Upload Images</span>
           <span class="upload-hint"
-            >Support PNG, JPG, JPEG, GIF formats • Multiple files & folders supported ��� Use Ctrl+V
+            >Support PNG, JPG, JPEG, GIF formats • Multiple files & folders supported • Use Ctrl+V
             to paste images</span
           >
         </button>
@@ -1012,16 +1123,32 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                     <div class="size-item">
                       <span class="size-label">Compressed</span
                       ><span class="size-value compressed">{{
-                        formatFileSize(item.compressedSize || 0)
+                        formatFileSize(
+                          item.compressionResults.find((r) => r.id === item.selectedResultId)
+                            ?.size || 0
+                        )
                       }}</span>
                     </div>
                   </div>
                   <div class="compression-ratio">
                     <span
                       class="ratio-badge"
-                      :class="{ 'ratio-negative': (item.compressionRatio || 0) < 0 }"
-                      >{{ (item.compressionRatio || 0) < 0 ? '+' : '-'
-                      }}{{ Math.abs(item.compressionRatio || 0).toFixed(1) }}%</span
+                      :class="{
+                        'ratio-negative':
+                          (item.compressionResults.find((r) => r.id === item.selectedResultId)
+                            ?.ratio || 0) < 0
+                      }"
+                      >{{
+                        (item.compressionResults.find((r) => r.id === item.selectedResultId)
+                          ?.ratio || 0) < 0
+                          ? '+'
+                          : '-'
+                      }}{{
+                        Math.abs(
+                          item.compressionResults.find((r) => r.id === item.selectedResultId)
+                            ?.ratio || 0
+                        ).toFixed(1)
+                      }}%</span
                     >
                   </div>
                 </div>
@@ -1063,10 +1190,31 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                   @change="(val: number) => handleImageQualitySliderChange(item, val)"
                 />
               </div>
+              <!-- 压缩结果列表 -->
+              <div v-if="item.compressionResults.length > 1" class="compression-results-list">
+                <div class="results-header">
+                  <span class="results-title">Results ({{ item.compressionResults.length }})</span>
+                </div>
+                <div class="results-grid">
+                  <div
+                    v-for="result in item.compressionResults"
+                    :key="result.id"
+                    class="result-item"
+                    :class="{ selected: result.id === item.selectedResultId }"
+                    @click.stop="selectCompressionResult(item, result.id)"
+                  >
+                    <div class="result-tool">{{ result.tool }}</div>
+                    <div class="result-size">{{ formatFileSize(result.size) }}</div>
+                    <div class="result-ratio" :class="{ negative: result.ratio < 0 }">
+                      {{ result.ratio < 0 ? '+' : '-' }}{{ Math.abs(result.ratio).toFixed(1) }}%
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="image-actions">
               <button
-                v-if="item.compressedUrl && !item.compressionError"
+                v-if="item.compressionResults.length > 0"
                 class="action-btn-small download-single"
                 title="Download this image"
                 @click.stop="downloadImage(item)"
@@ -1074,7 +1222,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                 <el-icon><Download /></el-icon>
               </button>
               <button
-                v-if="item.compressedUrl && !item.compressionError"
+                v-if="item.compressionResults.length > 0"
                 class="action-btn-small preview-single"
                 title="Preview comparison"
                 @click.stop="previewCompressionResult(item)"
@@ -1103,7 +1251,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
             @mousedown="handleImageMouseDown"
           >
             <img-comparison-slider
-              v-if="currentImage.originalUrl && currentImage.compressedUrl"
+              v-if="currentImage.originalUrl && selectedResult && selectedResult.url"
               class="comparison-slider-fullscreen"
               value="50"
             >
@@ -1120,7 +1268,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
               </template>
               <template #second>
                 <img
-                  :src="currentImage.compressedUrl"
+                  :src="selectedResult.url"
                   alt="Compressed Image"
                   class="comparison-image-fullscreen"
                   :style="{
@@ -1193,15 +1341,13 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
                 <span>{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span>
                 <span>Quality: {{ Math.round(currentImage.quality * 100) }}%</span>
                 <span>{{ formatFileSize(currentImage.originalSize) }}</span>
-                <span v-if="currentImage.compressedSize">
-                  → {{ formatFileSize(currentImage.compressedSize) }}</span
-                >
+                <span v-if="selectedResult"> → {{ formatFileSize(selectedResult.size) }}</span>
                 <span
-                  v-if="currentImage.compressionRatio"
+                  v-if="selectedResult"
                   class="savings"
-                  :class="{ 'savings-negative': currentImage.compressionRatio < 0 }"
-                  >({{ currentImage.compressionRatio < 0 ? '+' : '-'
-                  }}{{ Math.abs(currentImage.compressionRatio).toFixed(1) }}%)</span
+                  :class="{ 'savings-negative': selectedResult.ratio < 0 }"
+                  >({{ selectedResult.ratio < 0 ? '+' : '-'
+                  }}{{ Math.abs(selectedResult.ratio).toFixed(1) }}%)</span
                 >
               </div>
             </div>
@@ -1941,6 +2087,84 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
   --el-slider-runway-bg-color: #e2e8f0;
   height: 20px;
   margin-top: -4px;
+}
+
+/* 压缩结果列表样式 */
+.compression-results-list {
+  margin-top: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #f1f5f9;
+}
+
+.results-header {
+  margin-bottom: 6px;
+}
+
+.results-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.results-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  font-size: 11px;
+}
+
+.result-item:hover {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.result-item.selected {
+  background-color: #ede9fe;
+  border-color: #a78bfa;
+  color: #5b21b6;
+}
+
+.result-tool {
+  flex: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-size {
+  font-weight: 500;
+  color: #475569;
+  min-width: 45px;
+  text-align: right;
+}
+
+.result-ratio {
+  font-weight: 600;
+  color: #16a34a;
+  min-width: 40px;
+  text-align: right;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background-color: #dcfce7;
+}
+
+.result-ratio.negative {
+  color: #b91c1c;
+  background-color: #fee2e2;
 }
 
 .image-actions {
