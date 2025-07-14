@@ -589,7 +589,7 @@ async function downloadImage(item: ImageItem): Promise<void> {
   try {
     download(item.compressedUrl, item.file.name)
     ElMessage.success(`Downloaded: ${item.file.name}`)
-  } catch (error) {
+  } catch {
     ElMessage.error('Download failed.')
   }
 }

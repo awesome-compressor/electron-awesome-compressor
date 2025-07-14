@@ -154,7 +154,7 @@ export class NodeCompressPresenter {
   private setupWorkerCommunication(): void {
     if (!this.workerPort) return
 
-    this.workerPort.on('message', (e) => {
+    this.workerPort.on('message', (e: Electron.MessageEvent) => {
       const response = e.data as CompressionResponse | { type: 'ready' }
 
       if (response.type === 'ready') {
@@ -190,7 +190,7 @@ export class NodeCompressPresenter {
         reject(new Error('Worker ready timeout'))
       }, 10000) // 10 second timeout
 
-      const onMessage = (e: MessageEvent) => {
+      const onMessage = (e: Electron.MessageEvent): void => {
         if (e.data?.type === 'ready') {
           clearTimeout(timeout)
           this.workerPort?.removeListener('message', onMessage)
@@ -442,7 +442,7 @@ export class NodeCompressPresenter {
       maxWidth?: number
       maxHeight?: number
       preserveExif?: boolean
-    } = {},
+    } = {}
   ): Promise<NodeCompressionStats> {
     try {
       console.log(`Converting bytes to Buffer for: ${filename}`)
