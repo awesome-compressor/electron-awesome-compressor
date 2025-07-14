@@ -45,18 +45,21 @@ _即将添加应用界面截图_
 #### 🆕 主要更新内容
 
 **1. 用户界面现代化**
+
 - 更新了应用副标题为："Compress your images with ease, right in your browser • Support batch processing"
 - 集成了 browser-compress-image 的最新样式系统
 - 改进的响应式设计，更好的移动端适配
 - 优化的拖拽和交互体验
 
 **2. 压缩引擎优化**
+
 - 简化了浏览器端压缩逻辑，移除了过时的 `toolConfigs` 参数
 - 保持 Electron 特有的 Node.js 压缩作为额外增强
 - 更好的错误处理和用户反馈
 - 双引擎压缩系统：浏览器压缩 + Node.js 压缩
 
 **3. 保留的 Electron 特色功能**
+
 - ✅ **macOS 支持**：透明标题栏和拖拽区域
 - ✅ **预览窗口**：通过 IPC 通信的独立对比窗口
 - ✅ **Node.js 压缩**：后台使用 Node.js 工具的额外压缩
@@ -64,6 +67,7 @@ _即将添加应用界面截图_
 - ✅ **Presenter 模式**：清晰的关注点分离架构
 
 **4. 代码质量提升**
+
 - 修复了所有 TypeScript 错误和警告
 - 添加了正确的 Vue 3 Composition API 导入
 - 移除了过时的依赖项
@@ -72,25 +76,27 @@ _即将添加应用界面截图_
 #### 🛠️ 技术实现细节
 
 **Presenter 系统集成**
+
 ```typescript
 // 从渲染进程访问 Node.js 压缩
 const nodeCompressPresenter = usePresenter('nodeCompressPresenter')
 
 // 使用 Node.js 工具压缩图片
-const result = await nodeCompressPresenter.compressImageFromBytes(
-  uint8Array, 
-  filename, 
-  { quality: 0.8, preserveExif: false }
-)
+const result = await nodeCompressPresenter.compressImageFromBytes(uint8Array, filename, {
+  quality: 0.8,
+  preserveExif: false
+})
 ```
 
 **预览窗口功能**
+
 ```typescript
 // 打开对比窗口
 await previewCompressionResult(imageItem)
 ```
 
 **自定义协议支持**
+
 - `eacompressor-file://getFile?id=<fileId>` - 安全访问压缩文件
 - 不暴露文件系统路径的安全文件访问
 

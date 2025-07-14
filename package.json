@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.16.1",
-    "@awesome-compressor/browser-compress-image": "^0.0.2",
+    "@awesome-compressor/browser-compress-image": "^0.0.3",
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.0.0",
     "@electron-toolkit/tsconfig": "^1.0.1",

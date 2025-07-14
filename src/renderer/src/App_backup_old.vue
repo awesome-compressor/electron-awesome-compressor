@@ -13,7 +13,7 @@ import {
   Setting,
   Key,
   Plus,
-  Delete,
+  Delete
 } from '@element-plus/icons-vue'
 import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
@@ -125,8 +125,8 @@ const loadSettings = () => {
         {
           name: 'tinypng',
           key: '',
-          enabled: false,
-        },
+          enabled: false
+        }
       ]
     }
   } catch (error) {
@@ -136,8 +136,8 @@ const loadSettings = () => {
       {
         name: 'tinypng',
         key: '',
-        enabled: false,
-      },
+        enabled: false
+      }
     ]
   }
 
@@ -181,7 +181,7 @@ const addToolConfig = () => {
     tempToolConfigs.value.push({
       name: availableTool,
       key: '',
-      enabled: false,
+      enabled: false
     })
   }
 }
@@ -192,9 +192,7 @@ const removeToolConfig = (index: number) => {
 }
 
 // 全局质量百分比计算属性 - 显示拖动中的值
-const globalQualityPercent = computed(() =>
-  Math.round(globalQualityDragging.value * 100),
-)
+const globalQualityPercent = computed(() => Math.round(globalQualityDragging.value * 100))
 
 // 全局质量拖动输入处理 - 只更新显示，不触发重压缩
 const handleGlobalQualityInput = (value: number) => {
@@ -227,10 +225,7 @@ const handleGlobalQualityChange = async (newGlobalQuality: number) => {
 }
 
 // 单个图片质量变化处理
-const handleImageQualityChange = async (
-  item: ImageItem,
-  newQualityPercent: number,
-) => {
+const handleImageQualityChange = async (item: ImageItem, newQualityPercent: number) => {
   // 更新质量值 (转换为0-1范围)
   item.quality = newQualityPercent / 100
 
@@ -242,23 +237,13 @@ const handleImageQualityChange = async (
 
 // 图片列表状态
 const imageItems = ref<ImageItem[]>([])
-const supportType = [
-  'image/png',
-  'image/jpg',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-]
+const supportType = ['image/png', 'image/jpg', 'image/jpeg', 'image/gif', 'image/webp']
 
 // 检查并过滤不支持的文件，显示提示信息
 function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
   const imageFiles = files.filter((file) => file.type.startsWith('image/'))
-  const supportedFiles = imageFiles.filter((file) =>
-    supportType.includes(file.type),
-  )
-  const unsupportedFiles = imageFiles.filter(
-    (file) => !supportType.includes(file.type),
-  )
+  const supportedFiles = imageFiles.filter((file) => supportType.includes(file.type))
+  const unsupportedFiles = imageFiles.filter((file) => !supportType.includes(file.type))
 
   // 如果有不支持的图片格式，显示详细提示
   if (unsupportedFiles.length > 0) {
@@ -267,31 +252,29 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
       return {
         name: file.name,
         extension: extension.toUpperCase(),
-        type: file.type || 'unknown',
+        type: file.type || 'unknown'
       }
     })
 
-    const unsupportedFormats = [
-      ...new Set(unsupportedDetails.map((detail) => detail.extension)),
-    ]
+    const unsupportedFormats = [...new Set(unsupportedDetails.map((detail) => detail.extension))]
 
     ElMessage({
       message: h('div', [
         h(
           'div',
           { style: 'font-weight: 600; margin-bottom: 6px' },
-          `已过滤 ${unsupportedFiles.length} 个不支持的图片文件:`,
+          `已过滤 ${unsupportedFiles.length} 个不支持的图片文件:`
         ),
         h(
           'div',
           { style: 'font-size: 13px; margin-bottom: 4px; color: #f56565' },
-          `不支持的格式: ${unsupportedFormats.join(', ')}`,
+          `不支持的格式: ${unsupportedFormats.join(', ')}`
         ),
         unsupportedFiles.length <= 3
           ? h(
               'div',
               { style: 'font-size: 12px; margin-bottom: 6px; opacity: 0.8' },
-              unsupportedFiles.map((f) => f.name).join(', '),
+              unsupportedFiles.map((f) => f.name).join(', ')
             )
           : h(
               'div',
@@ -299,19 +282,18 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
               `${unsupportedFiles
                 .slice(0, 2)
                 .map((f) => f.name)
-                .join(', ')} 等 ${unsupportedFiles.length} 个文件`,
+                .join(', ')} 等 ${unsupportedFiles.length} 个文件`
             ),
         h(
           'div',
           {
-            style:
-              'font-size: 12px; opacity: 0.7; border-top: 1px solid #e2e8f0; padding-top: 4px',
+            style: 'font-size: 12px; opacity: 0.7; border-top: 1px solid #e2e8f0; padding-top: 4px'
           },
-          '✅ 支持的格式: PNG, JPG, JPEG, GIF, WebP',
-        ),
+          '✅ 支持的格式: PNG, JPG, JPEG, GIF, WebP'
+        )
       ]),
       type: 'warning',
-      duration: 5000,
+      duration: 5000
     })
   }
 
@@ -325,7 +307,7 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
           ? h(
               'div',
               { style: 'font-size: 12px; margin-top: 4px; opacity: 0.8' },
-              nonImageFiles.map((f) => f.name).join(', '),
+              nonImageFiles.map((f) => f.name).join(', ')
             )
           : h(
               'div',
@@ -333,11 +315,11 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
               `${nonImageFiles
                 .slice(0, 2)
                 .map((f) => f.name)
-                .join(', ')} 等文件`,
-            ),
+                .join(', ')} 等文件`
+            )
       ]),
       type: 'info',
-      duration: 3000,
+      duration: 3000
     })
   }
 
@@ -348,30 +330,21 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
 const hasImages = computed(() => imageItems.value.length > 0)
 const currentImage = computed(() => imageItems.value[currentImageIndex.value])
 const totalOriginalSize = computed(() =>
-  imageItems.value.reduce((sum, item) => sum + item.originalSize, 0),
+  imageItems.value.reduce((sum, item) => sum + item.originalSize, 0)
 )
 const totalCompressedSize = computed(() =>
-  imageItems.value.reduce((sum, item) => sum + (item.compressedSize || 0), 0),
+  imageItems.value.reduce((sum, item) => sum + (item.compressedSize || 0), 0)
 )
 
 const totalCompressionRatio = computed(() => {
   if (totalOriginalSize.value === 0) return 0
-  return (
-    ((totalOriginalSize.value - totalCompressedSize.value) /
-      totalOriginalSize.value) *
-    100
-  )
+  return ((totalOriginalSize.value - totalCompressedSize.value) / totalOriginalSize.value) * 100
 })
 const compressedCount = computed(
-  () =>
-    imageItems.value.filter(
-      (item) => item.compressedUrl && !item.compressionError,
-    ).length,
+  () => imageItems.value.filter((item) => item.compressedUrl && !item.compressionError).length
 )
 const allCompressed = computed(
-  () =>
-    imageItems.value.length > 0 &&
-    compressedCount.value === imageItems.value.length,
+  () => imageItems.value.length > 0 && compressedCount.value === imageItems.value.length
 )
 
 // 检查是否可以添加新的工具配置
@@ -386,7 +359,7 @@ const canAddToolConfig = computed(() => {
 onMounted(() => {
   // 检测操作系统
   isMacOS.value = navigator.userAgent.includes('Mac')
-  
+
   // 加载保存的设置
   loadSettings()
 
@@ -459,10 +432,7 @@ onUnmounted(() => {
 function handleTouchStart(e: TouchEvent) {
   // 检查触摸是否在图片比较滑块上
   const target = e.target as HTMLElement
-  if (
-    target.closest('img-comparison-slider') ||
-    target.closest('.comparison-slider-fullscreen')
-  ) {
+  if (target.closest('img-comparison-slider') || target.closest('.comparison-slider-fullscreen')) {
     isMobileDragging.value = true
     console.log('touch start')
   }
@@ -478,10 +448,7 @@ function handleTouchEnd(e: TouchEvent) {
 function handleMouseDown(e: MouseEvent) {
   // 检查鼠标按下是否在图片比较滑块上
   const target = e.target as HTMLElement
-  if (
-    target.closest('img-comparison-slider') ||
-    target.closest('.comparison-slider-fullscreen')
-  ) {
+  if (target.closest('img-comparison-slider') || target.closest('.comparison-slider-fullscreen')) {
     isPCDragging.value = true
     console.log('mouse down on slider')
   }
@@ -505,7 +472,7 @@ function handleDragEnter(e: DragEvent) {
     const hasImageOrFolder = Array.from(e.dataTransfer.items).some(
       (item) =>
         (item.kind === 'file' && item.type.startsWith('image/')) ||
-        (item.kind === 'file' && item.type === ''),
+        (item.kind === 'file' && item.type === '')
     )
     if (hasImageOrFolder) {
       isDragOver.value = true
@@ -547,7 +514,7 @@ async function handleDrop(e: DragEvent) {
       console.log(
         'extractFilesFromDataTransfer 结果:',
         files.length,
-        files.map((f) => f.name),
+        files.map((f) => f.name)
       )
     }
 
@@ -558,7 +525,7 @@ async function handleDrop(e: DragEvent) {
       console.log(
         '传统 API 结果:',
         files.length,
-        files.map((f) => f.name),
+        files.map((f) => f.name)
       )
     }
 
@@ -566,7 +533,7 @@ async function handleDrop(e: DragEvent) {
       console.warn('没有找到任何文件')
       ElMessage({
         message: 'No files found. Please try again.',
-        type: 'warning',
+        type: 'warning'
       })
       return
     }
@@ -575,13 +542,13 @@ async function handleDrop(e: DragEvent) {
     console.log(
       '过滤后的图片文件:',
       imageFiles.length,
-      imageFiles.map((f) => f.name),
+      imageFiles.map((f) => f.name)
     )
 
     if (imageFiles.length === 0) {
       ElMessage({
         message: '没有找到支持的图片文件',
-        type: 'warning',
+        type: 'warning'
       })
       return
     }
@@ -590,13 +557,13 @@ async function handleDrop(e: DragEvent) {
 
     ElMessage({
       message: `Successfully loaded ${imageFiles.length} image(s)`,
-      type: 'success',
+      type: 'success'
     })
   } catch (error) {
     console.error('Error processing dropped files:', error)
     ElMessage({
       message: 'Error processing files. Please try again.',
-      type: 'error',
+      type: 'error'
     })
   } finally {
     loading.value = false
@@ -627,7 +594,7 @@ async function handlePaste(e: ClipboardEvent) {
         console.log(`处理剪贴板 Item ${i}:`, {
           kind: item.kind,
           type: item.type,
-          webkitGetAsEntry: !!item.webkitGetAsEntry,
+          webkitGetAsEntry: !!item.webkitGetAsEntry
         })
 
         if (item.kind === 'file') {
@@ -642,7 +609,7 @@ async function handlePaste(e: ClipboardEvent) {
             console.log(
               `Item ${i} processEntry 完成，文件数:`,
               itemFiles.length,
-              itemFiles.map((f) => f.name),
+              itemFiles.map((f) => f.name)
             )
             files.push(...itemFiles)
           } else {
@@ -659,12 +626,12 @@ async function handlePaste(e: ClipboardEvent) {
         } else {
           console.log(`Item ${i} 不是文件类型, kind: ${item.kind}`)
         }
-      }),
+      })
     )
 
     console.log(
       `总共收集到 ${files.length} 个文件:`,
-      files.map((f) => f.name),
+      files.map((f) => f.name)
     )
 
     // 过滤图片文件
@@ -672,7 +639,7 @@ async function handlePaste(e: ClipboardEvent) {
     console.log(
       '剪贴板过滤后的图片文件:',
       imageFiles.length,
-      imageFiles.map((f) => f.name),
+      imageFiles.map((f) => f.name)
     )
 
     if (imageFiles.length === 0) {
@@ -684,13 +651,13 @@ async function handlePaste(e: ClipboardEvent) {
 
     ElMessage({
       message: `Successfully pasted ${imageFiles.length} image(s)`,
-      type: 'success',
+      type: 'success'
     })
   } catch (error) {
     console.error('Error processing pasted files:', error)
     ElMessage({
       message: 'Error processing pasted files. Please try again.',
-      type: 'error',
+      type: 'error'
     })
   } finally {
     loading.value = false
@@ -698,17 +665,13 @@ async function handlePaste(e: ClipboardEvent) {
 }
 
 // 从DataTransfer中提取所有文件（包括文件夹中的文件）
-async function extractFilesFromDataTransfer(
-  items: DataTransferItemList,
-): Promise<File[]> {
+async function extractFilesFromDataTransfer(items: DataTransferItemList): Promise<File[]> {
   console.log('extractFilesFromDataTransfer 开始处理', items.length, '个 items')
   return await extractFilesFromItems(items)
 }
 
 // 通用的文件提取函数，支持拖拽和粘贴
-async function extractFilesFromItems(
-  items: DataTransferItemList,
-): Promise<File[]> {
+async function extractFilesFromItems(items: DataTransferItemList): Promise<File[]> {
   console.log('extractFilesFromItems 开始处理', items.length, '个 items')
 
   const promises: Promise<File[]>[] = []
@@ -729,10 +692,10 @@ async function extractFilesFromItems(
             console.log(
               `Item ${i} processEntry 完成，文件数:`,
               itemFiles.length,
-              itemFiles.map((f) => f.name),
+              itemFiles.map((f) => f.name)
             )
             return itemFiles
-          }),
+          })
         )
       } else {
         // 回退到传统文件API - 当webkitGetAsEntry返回null时
@@ -757,22 +720,14 @@ async function extractFilesFromItems(
     'extractFilesFromItems 完成，总共',
     files.length,
     '个文件:',
-    files.map((f) => f.name),
+    files.map((f) => f.name)
   )
   return files
 }
 
 // 递归处理文件和文件夹
-async function processEntry(
-  entry: FileSystemEntry,
-  files: File[],
-): Promise<void> {
-  console.log(
-    'processEntry 开始处理:',
-    entry.name,
-    entry.isFile,
-    entry.isDirectory,
-  )
+async function processEntry(entry: FileSystemEntry, files: File[]): Promise<void> {
+  console.log('processEntry 开始处理:', entry.name, entry.isFile, entry.isDirectory)
 
   if (entry.isFile) {
     const fileEntry = entry as FileSystemFileEntry
@@ -817,7 +772,7 @@ async function handleFileInputChange() {
       if (imageFiles.length === 0) {
         ElMessage({
           message: '没有找到支持的图片文件',
-          type: 'warning',
+          type: 'warning'
         })
         return
       }
@@ -826,7 +781,7 @@ async function handleFileInputChange() {
 
       ElMessage({
         message: `Successfully loaded ${imageFiles.length} image(s)`,
-        type: 'success',
+        type: 'success'
       })
     } finally {
       loading.value = false
@@ -848,7 +803,7 @@ async function addNewImages(files: File[]) {
     // Electron specific
     isNodeCompressing: false,
     nodeCompressionStarted: false,
-    compressionResults: [],
+    compressionResults: []
   }))
   // 自动开始压缩所有新添加的图片
   await compressImages(newItems)
@@ -865,20 +820,20 @@ async function compressImage(item: ImageItem): Promise<void> {
   try {
     // 过滤出启用的工具配置
     const enabledToolConfigs = toolConfigs.value.filter(
-      (config) => config.enabled && config.key.trim(),
+      (config) => config.enabled && config.key.trim()
     )
 
     const compressedBlob = await compress(item.file, {
       quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
       type: 'blob',
       preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
-      toolConfigs: enabledToolConfigs, // 传入工具配置
+      toolConfigs: enabledToolConfigs // 传入工具配置
     })
 
     if (!compressedBlob) {
       ElMessage({
         message: 'size is too large',
-        type: 'error',
+        type: 'error'
       })
       return
     }
@@ -889,8 +844,7 @@ async function compressImage(item: ImageItem): Promise<void> {
 
     item.compressedUrl = URL.createObjectURL(compressedBlob)
     item.compressedSize = compressedBlob.size
-    item.compressionRatio =
-      ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+    item.compressionRatio = ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
 
     // Electron specific - also try node compression
     if (nodeCompressPresenter && !item.nodeCompressionStarted) {
@@ -900,8 +854,7 @@ async function compressImage(item: ImageItem): Promise<void> {
     // 为当前图片优化渲染性能
   } catch (error) {
     console.error('Compression error:', error)
-    item.compressionError =
-      error instanceof Error ? error.message : 'Compression failed'
+    item.compressionError = error instanceof Error ? error.message : 'Compression failed'
   } finally {
     item.isCompressing = false
   }
@@ -1058,12 +1011,12 @@ async function downloadImage(item: ImageItem) {
     ElMessage({
       message: `Downloaded: ${originalName}`,
       type: 'success',
-      duration: 2000,
+      duration: 2000
     })
   } catch (error) {
     ElMessage({
       message: 'Download failed. Please try again.',
-      type: 'error',
+      type: 'error'
     })
   }
 }
@@ -1107,12 +1060,12 @@ async function downloadAllImages() {
   if (downloading.value) return
 
   const downloadableItems = imageItems.value.filter(
-    (item) => item.compressedUrl && !item.compressionError,
+    (item) => item.compressedUrl && !item.compressionError
   )
   if (downloadableItems.length === 0) {
     ElMessage({
       message: 'No compressed images to download',
-      type: 'warning',
+      type: 'warning'
     })
     return
   }
@@ -1158,24 +1111,24 @@ async function downloadAllImages() {
         h(
           'div',
           { style: 'color: #16a34a; font-weight: 500; margin-bottom: 4px;' },
-          `Successfully downloaded ${downloadableItems.length} images in ${zipFileName}`,
+          `Successfully downloaded ${downloadableItems.length} images in ${zipFileName}`
         ),
         h(
           'div',
           {
-            style: `color: ${totalCompressionRatio.value < 0 ? '#dc2626' : '#059669'}; font-size: 13px; font-family: monospace; background: ${totalCompressionRatio.value < 0 ? 'rgba(220, 38, 38, 0.1)' : 'rgba(5, 150, 105, 0.1)'}; padding: 2px 6px; border-radius: 4px;`,
+            style: `color: ${totalCompressionRatio.value < 0 ? '#dc2626' : '#059669'}; font-size: 13px; font-family: monospace; background: ${totalCompressionRatio.value < 0 ? 'rgba(220, 38, 38, 0.1)' : 'rgba(5, 150, 105, 0.1)'}; padding: 2px 6px; border-radius: 4px;`
           },
-          `Total ${totalCompressionRatio.value < 0 ? 'increased' : 'saved'}: ${totalCompressionRatio.value < 0 ? '+' : ''}${Math.abs(totalCompressionRatio.value).toFixed(1)}%`,
-        ),
+          `Total ${totalCompressionRatio.value < 0 ? 'increased' : 'saved'}: ${totalCompressionRatio.value < 0 ? '+' : ''}${Math.abs(totalCompressionRatio.value).toFixed(1)}%`
+        )
       ]),
       type: 'success',
-      duration: 4000,
+      duration: 4000
     })
   } catch (error) {
     console.error('Batch download error:', error)
     ElMessage({
       message: 'Batch download failed. Please try again.',
-      type: 'error',
+      type: 'error'
     })
   } finally {
     downloading.value = false
@@ -1226,14 +1179,8 @@ function zoomOut() {
 // 约束图片位置在边界内
 function constrainImagePosition() {
   const bounds = calculateImageBounds()
-  imageTransform.value.x = Math.max(
-    bounds.minX,
-    Math.min(bounds.maxX, imageTransform.value.x),
-  )
-  imageTransform.value.y = Math.max(
-    bounds.minY,
-    Math.min(bounds.maxY, imageTransform.value.y),
-  )
+  imageTransform.value.x = Math.max(bounds.minX, Math.min(bounds.maxX, imageTransform.value.x))
+  imageTransform.value.y = Math.max(bounds.minY, Math.min(bounds.maxY, imageTransform.value.y))
 }
 
 // 图片加载完成处理
@@ -1312,9 +1259,7 @@ function handleKeydown(e: KeyboardEvent) {
     case 'ArrowRight':
       if (isFullscreen.value) {
         e.preventDefault()
-        setCurrentImage(
-          Math.min(imageItems.value.length - 1, currentImageIndex.value + 1),
-        )
+        setCurrentImage(Math.min(imageItems.value.length - 1, currentImageIndex.value + 1))
       }
       break
   }
@@ -1365,9 +1310,7 @@ function calculateImageBounds() {
   }
 
   // 获取全屏容器的实际尺寸
-  const container = document.querySelector(
-    '.comparison-container-fullscreen',
-  ) as HTMLElement
+  const container = document.querySelector('.comparison-container-fullscreen') as HTMLElement
   if (!container) {
     return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
   }
@@ -1378,7 +1321,7 @@ function calculateImageBounds() {
 
   // 获取图片元素
   const imgElement = container.querySelector(
-    '.comparison-image-fullscreen, .single-image',
+    '.comparison-image-fullscreen, .single-image'
   ) as HTMLImageElement
   if (!imgElement) {
     return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
@@ -1427,15 +1370,15 @@ function calculateImageBounds() {
       maxX: maxMoveX,
       maxY: maxMoveY,
       minX: -maxMoveX,
-      minY: -maxMoveY,
-    },
+      minY: -maxMoveY
+    }
   })
 
   return {
     maxX: maxMoveX,
     maxY: maxMoveY,
     minX: -maxMoveX,
-    minY: -maxMoveY,
+    minY: -maxMoveY
   }
 }
 
@@ -1476,8 +1419,7 @@ function handleImageMouseUp() {
         </el-icon>
         <div class="drag-text">Drop images or folders here</div>
         <div class="drag-subtitle">
-          Support multiple images and folder drag & drop • Or use Ctrl+V to
-          paste
+          Support multiple images and folder drag & drop • Or use Ctrl+V to paste
         </div>
       </div>
     </div>
@@ -1520,15 +1462,14 @@ function handleImageMouseUp() {
           <el-button
             type="primary"
             class="settings-btn-main"
-            @click="openSettingsPanel"
             :icon="Setting"
             plain
+            @click="openSettingsPanel"
           >
             Configure Compression Tools
           </el-button>
           <p class="settings-hint">
-            Configure API keys and enable compression tools before uploading
-            images
+            Configure API keys and enable compression tools before uploading images
           </p>
         </div>
       </section>
@@ -1541,8 +1482,8 @@ function handleImageMouseUp() {
           </el-icon>
           <span class="upload-text">Drop, Paste or Click to Upload Images</span>
           <span class="upload-hint">
-            Support PNG, JPG, JPEG, GIF, WebP formats • Multiple files & folders
-            supported • Use Ctrl+V to paste images
+            Support PNG, JPG, JPEG, GIF, WebP formats • Multiple files & folders supported • Use
+            Ctrl+V to paste images
           </span>
         </button>
       </section>
@@ -1553,17 +1494,11 @@ function handleImageMouseUp() {
           <div class="files-info">
             <div class="files-icon">📷</div>
             <span class="files-count">{{ imageItems.length }} image(s)</span>
-            <span class="compressed-count"
-              >({{ compressedCount }} compressed)</span
-            >
+            <span class="compressed-count">({{ compressedCount }} compressed)</span>
           </div>
 
           <div class="action-buttons">
-            <button
-              class="action-btn add-btn"
-              title="Add More Images"
-              @click="uploadImages"
-            >
+            <button class="action-btn add-btn" title="Add More Images" @click="uploadImages">
               <div class="btn-icon">
                 <el-icon>
                   <Upload />
@@ -1571,11 +1506,7 @@ function handleImageMouseUp() {
               </div>
               <span class="btn-text">Add More</span>
             </button>
-            <button
-              class="action-btn delete-btn"
-              title="Clear All Images"
-              @click="clearAllImages"
-            >
+            <button class="action-btn delete-btn" title="Clear All Images" @click="clearAllImages">
               <div class="btn-icon">
                 <el-icon>
                   <CloseBold />
@@ -1594,10 +1525,7 @@ function handleImageMouseUp() {
               >Total: {{ formatFileSize(totalOriginalSize) }} →
               {{ formatFileSize(totalCompressedSize) }}</span
             >
-            <span
-              class="saved-mini"
-              :class="{ 'saved-negative': totalCompressionRatio < 0 }"
-            >
+            <span class="saved-mini" :class="{ 'saved-negative': totalCompressionRatio < 0 }">
               {{ totalCompressionRatio < 0 ? '+' : '-'
               }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}%
             </span>
@@ -1608,28 +1536,23 @@ function handleImageMouseUp() {
 
         <div class="toolbar-section options-section">
           <div class="exif-option">
-            <el-checkbox
-              v-model="preserveExif"
-              @change="handlePreserveExifChange"
-            >
+            <el-checkbox v-model="preserveExif" @change="handlePreserveExifChange">
               <span class="exif-label">Preserve EXIF</span>
             </el-checkbox>
           </div>
 
           <div class="quality-control">
-            <span class="quality-label-small"
-              >Global Quality: {{ globalQualityPercent }}%</span
-            >
+            <span class="quality-label-small">Global Quality: {{ globalQualityPercent }}%</span>
             <el-slider
               :model-value="globalQualityPercent"
-              @input="handleGlobalQualityInput"
-              @change="handleGlobalQualitySliderChange"
               :max="100"
               :step="1"
               :min="1"
               class="global-quality-slider"
               :show-tooltip="false"
               size="small"
+              @input="handleGlobalQualityInput"
+              @change="handleGlobalQualitySliderChange"
             />
           </div>
         </div>
@@ -1654,11 +1577,7 @@ function handleImageMouseUp() {
                 </el-icon>
               </div>
               <span class="download-text">
-                {{
-                  downloading
-                    ? 'Downloading...'
-                    : `Download All (${compressedCount})`
-                }}
+                {{ downloading ? 'Downloading...' : `Download All (${compressedCount})` }}
               </span>
             </div>
           </button>
@@ -1677,11 +1596,7 @@ function handleImageMouseUp() {
             @click="setCurrentImage(index)"
           >
             <div class="image-preview">
-              <img
-                class="preview-image"
-                :src="item.originalUrl"
-                :alt="item.file.name"
-              />
+              <img class="preview-image" :src="item.originalUrl" :alt="item.file.name" />
               <div v-if="item.isCompressing || item.isNodeCompressing" class="compressing-overlay">
                 <el-icon class="is-loading">
                   <Loading />
@@ -1696,16 +1611,14 @@ function handleImageMouseUp() {
                 {{ item.file.name }}
               </div>
               <div class="image-stats">
-                <span class="original-size">{{
-                  formatFileSize(item.originalSize)
-                }}</span>
+                <span class="original-size">{{ formatFileSize(item.originalSize) }}</span>
                 <span class="compressed-size">
                   → {{ formatFileSize(item.compressedSize || 0) }}
                 </span>
                 <span
                   class="ratio"
                   :class="{
-                    'ratio-negative': (item.compressionRatio || 0) < 0,
+                    'ratio-negative': (item.compressionRatio || 0) < 0
                   }"
                 >
                   ({{ (item.compressionRatio || 0) < 0 ? '+' : '-'
@@ -1773,16 +1686,13 @@ function handleImageMouseUp() {
           <div
             class="comparison-container-fullscreen"
             :style="{
-              cursor: imageZoom > 1 ? 'move' : 'default',
+              cursor: imageZoom > 1 ? 'move' : 'default'
             }"
             @wheel="handleWheel"
             @mousedown="handleImageMouseDown"
           >
             <!-- 调试信息 -->
-            <div
-              v-if="!currentImage.originalUrl || !currentImage.compressedUrl"
-              class="debug-info"
-            >
+            <div v-if="!currentImage.originalUrl || !currentImage.compressedUrl" class="debug-info">
               <p>调试信息:</p>
               <p>
                 originalUrl:
@@ -1792,9 +1702,7 @@ function handleImageMouseUp() {
                 compressedUrl:
                 {{ currentImage.compressedUrl ? '已加载' : '未加载' }}
               </p>
-              <p>
-                originalSize: {{ formatFileSize(currentImage.originalSize) }}
-              </p>
+              <p>originalSize: {{ formatFileSize(currentImage.originalSize) }}</p>
               <p>
                 compressedSize:
                 {{
@@ -1824,7 +1732,7 @@ function handleImageMouseUp() {
                 class="comparison-image-fullscreen"
                 :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
-                  transformOrigin: 'center center',
+                  transformOrigin: 'center center'
                 }"
                 loading="eager"
                 decoding="sync"
@@ -1838,7 +1746,7 @@ function handleImageMouseUp() {
                 class="comparison-image-fullscreen"
                 :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
-                  transformOrigin: 'center center',
+                  transformOrigin: 'center center'
                 }"
                 loading="eager"
                 decoding="sync"
@@ -1849,30 +1757,27 @@ function handleImageMouseUp() {
             </img-comparison-slider>
 
             <!-- 仅显示原图（压缩中或出错时） -->
-            <div
-              v-else-if="currentImage.originalUrl"
-              class="single-image-preview"
-            >
+            <div v-else-if="currentImage.originalUrl" class="single-image-preview">
               <img
                 :src="currentImage.originalUrl"
                 :alt="currentImage.file.name"
                 class="single-image"
                 :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
-                  transformOrigin: 'center center',
+                  transformOrigin: 'center center'
                 }"
                 @load="handleImageLoad('original')"
               />
-              <div v-if="currentImage.isCompressing || currentImage.isNodeCompressing" class="preview-overlay">
+              <div
+                v-if="currentImage.isCompressing || currentImage.isNodeCompressing"
+                class="preview-overlay"
+              >
                 <el-icon class="is-loading" size="30px">
                   <Loading />
                 </el-icon>
                 <div class="overlay-text">Compressing...</div>
               </div>
-              <div
-                v-if="currentImage.compressionError"
-                class="preview-overlay error"
-              >
+              <div v-if="currentImage.compressionError" class="preview-overlay error">
                 <div class="overlay-text">Compression Error</div>
                 <div class="overlay-subtext">
                   {{ currentImage.compressionError }}
@@ -1885,7 +1790,7 @@ function handleImageMouseUp() {
               class="image-overlay-info"
               :class="{
                 'mobile-dragging': isMobileDragging,
-                'pc-dragging': isPCDragging,
+                'pc-dragging': isPCDragging
               }"
             >
               <div class="overlay-header">
@@ -1896,46 +1801,37 @@ function handleImageMouseUp() {
                   <el-button
                     circle
                     size="small"
-                    @click="zoomOut"
                     :disabled="imageZoom <= 0.1"
                     title="缩小 (-)"
+                    @click="zoomOut"
                   >
                     <el-icon><ZoomOut /></el-icon>
                   </el-button>
-                  <span class="zoom-info"
-                    >{{ Math.round(imageZoom * 100) }}%</span
-                  >
+                  <span class="zoom-info">{{ Math.round(imageZoom * 100) }}%</span>
                   <el-button
                     circle
                     size="small"
-                    @click="zoomIn"
                     :disabled="imageZoom >= 5"
                     title="放大 (+)"
+                    @click="zoomIn"
                   >
                     <el-icon><ZoomIn /></el-icon>
                   </el-button>
-                  <el-button
-                    circle
-                    size="small"
-                    @click="resetZoom"
-                    title="重置缩放 (0)"
-                  >
+                  <el-button circle size="small" title="重置缩放 (0)" @click="resetZoom">
                     <el-icon><Aim /></el-icon>
                   </el-button>
                   <el-button
                     circle
                     size="small"
-                    @click="toggleFullscreen"
                     :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
+                    @click="toggleFullscreen"
                   >
                     <el-icon><FullScreen /></el-icon>
                   </el-button>
                 </div>
               </div>
               <div class="image-details">
-                <span
-                  >{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span
-                >
+                <span>{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span>
                 <span>Quality: {{ Math.round(currentImage.quality * 100) }}%</span>
                 <span>{{ formatFileSize(currentImage.originalSize) }}</span>
                 <span v-if="currentImage.compressedSize">
@@ -1945,7 +1841,7 @@ function handleImageMouseUp() {
                   v-if="currentImage.compressionRatio"
                   class="savings"
                   :class="{
-                    'savings-negative': currentImage.compressionRatio < 0,
+                    'savings-negative': currentImage.compressionRatio < 0
                   }"
                 >
                   ({{ currentImage.compressionRatio < 0 ? '+' : '-'
@@ -1985,27 +1881,17 @@ function handleImageMouseUp() {
           </p>
 
           <div class="tool-config-list">
-            <div
-              v-for="(config, index) in tempToolConfigs"
-              :key="index"
-              class="tool-config-item"
-            >
+            <div v-for="(config, index) in tempToolConfigs" :key="index" class="tool-config-item">
               <div class="tool-header">
                 <div class="tool-info">
                   <el-icon class="tool-icon"><Picture /></el-icon>
                   <span class="tool-name">{{ config.name.toUpperCase() }}</span>
-                  <el-tag
-                    :type="config.enabled && config.key ? 'success' : 'info'"
-                    size="small"
-                  >
+                  <el-tag :type="config.enabled && config.key ? 'success' : 'info'" size="small">
                     {{ config.enabled && config.key ? 'Enabled' : 'Disabled' }}
                   </el-tag>
                 </div>
                 <div class="tool-actions">
-                  <el-switch
-                    v-model="config.enabled"
-                    :disabled="!config.key.trim()"
-                  />
+                  <el-switch v-model="config.enabled" :disabled="!config.key.trim()" />
                   <el-button
                     v-if="tempToolConfigs.length > 1"
                     type="danger"
@@ -2047,17 +1933,11 @@ function handleImageMouseUp() {
                   <p class="help-text">
                     <strong>TinyPNG API Key:</strong>
                     Get your free API key from
-                    <a
-                      href="https://tinypng.com/developers"
-                      target="_blank"
-                      class="help-link"
-                    >
+                    <a href="https://tinypng.com/developers" target="_blank" class="help-link">
                       TinyPNG Developer Portal
                     </a>
                   </p>
-                  <p class="help-note">
-                    💡 Free tier: 500 compressions per month
-                  </p>
+                  <p class="help-note">💡 Free tier: 500 compressions per month</p>
                 </div>
               </div>
             </div>
@@ -2077,18 +1957,14 @@ function handleImageMouseUp() {
           </h3>
           <div class="usage-info">
             <p>
-              • <strong>TinyPNG:</strong> Online service with excellent
-              compression for PNG, JPEG, and WebP files
+              • <strong>TinyPNG:</strong> Online service with excellent compression for PNG, JPEG,
+              and WebP files
             </p>
+            <p>• When enabled, configured tools will be included in the compression process</p>
+            <p>• Settings are automatically saved to your browser's local storage</p>
             <p>
-              • When enabled, configured tools will be included in the
-              compression process
-            </p>
-            <p>
-              • Settings are automatically saved to your browser's local storage
-            </p>
-            <p>
-              • <strong>Electron Node Compression:</strong> Additional server-side compression tools are automatically enabled
+              • <strong>Electron Node Compression:</strong> Additional server-side compression tools
+              are automatically enabled
             </p>
           </div>
         </div>

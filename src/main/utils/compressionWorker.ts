@@ -80,12 +80,18 @@ class CompressionWorker {
       }
 
       // Get compression results for all tools
-      const compressResults = await compress(imageBuffer, { ...compressOptions, returnAllResults: true })
+      const compressResults = await compress(imageBuffer, {
+        ...compressOptions,
+        returnAllResults: true
+      })
 
       console.log(`[CompressionWorker] Compression completed in ${compressResults.totalDuration}ms`)
-      console.log(`[CompressionWorker] Results:`, compressResults.allResults.map(r => 
-        `${r.tool}: ${(r.compressionRatio * 100).toFixed(1)}% reduction, ${r.duration}ms`
-      ))
+      console.log(
+        `[CompressionWorker] Results:`,
+        compressResults.allResults.map(
+          (r) => `${r.tool}: ${(r.compressionRatio * 100).toFixed(1)}% reduction, ${r.duration}ms`
+        )
+      )
 
       if (!compressResults || !compressResults.bestResult) {
         throw new Error('Compression failed: no valid results returned')
@@ -101,10 +107,12 @@ class CompressionWorker {
       console.log(`[CompressionWorker] Best tool: ${bestTool}`)
 
       // Calculate best compression ratio from allResults
-      const bestResultStats = compressResults.allResults.find(r => r.tool === bestTool)
+      const bestResultStats = compressResults.allResults.find((r) => r.tool === bestTool)
       const bestCompressionRatio = bestResultStats ? bestResultStats.compressionRatio : 0
 
-      console.log(`[CompressionWorker] Best compression ratio: ${(bestCompressionRatio * 100).toFixed(1)}%`)
+      console.log(
+        `[CompressionWorker] Best compression ratio: ${(bestCompressionRatio * 100).toFixed(1)}%`
+      )
 
       // Convert Buffer back to Uint8Array for transfer
       const compressedUint8Array = new Uint8Array(bestResult)
@@ -115,7 +123,7 @@ class CompressionWorker {
           bestTool,
           compressionRatio: bestCompressionRatio * 100, // Convert to percentage
           totalDuration: compressResults.totalDuration,
-          allResults: compressResults.allResults.map(result => ({
+          allResults: compressResults.allResults.map((result) => ({
             tool: result.tool,
             originalSize: result.originalSize,
             compressedSize: result.compressedSize,

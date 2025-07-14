@@ -7,6 +7,7 @@
 ## 项目架构对比
 
 ### Browser-Compress-Image (源项目)
+
 - **技术栈**：纯 Web 技术 (Vue 3 + TypeScript + Vite)
 - **运行环境**：浏览器
 - **压缩引擎**：浏览器端 JavaScript 库
@@ -14,6 +15,7 @@
 - **用户界面**：现代化响应式设计
 
 ### Electron-Awesome-Compressor (目标项目)
+
 - **技术栈**：Electron + Vue 3 + TypeScript
 - **运行环境**：桌面应用 (跨平台)
 - **压缩引擎**：浏览器端 + Node.js 双引擎
@@ -41,6 +43,7 @@
 **主要替换文件：** `src/renderer/src/App.vue`
 
 替换内容包括：
+
 - Script 部分：导入声明、接口定义、响应式状态
 - Template 部分：完整的 HTML 模板结构
 - Style 部分：完整的 CSS 样式系统
@@ -50,12 +53,13 @@
 ### 第一阶段：环境准备和分析
 
 1. **项目结构分析**
+
    ```bash
    # 分析两个项目的目录结构
    browser-compress-image/
    ├── playground/src/App.vue    # 源文件
    └── ...
-   
+
    electron-awesome-compressor/
    ├── src/renderer/src/App.vue  # 目标文件
    └── ...
@@ -70,16 +74,18 @@
 ### 第二阶段：分步骤替换
 
 #### Step 1: Script 部分替换
+
 ```typescript
 // 替换前 (Electron 版本)
 import { usePresenter } from './composables/usePresenter'
 
 // 替换后 (整合版本)
 import { h, ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { usePresenter } from './composables/usePresenter'  // 保留
+import { usePresenter } from './composables/usePresenter' // 保留
 ```
 
 #### Step 2: 接口和状态定义
+
 ```typescript
 // 保留 Electron 特有接口
 interface CompressionResult {
@@ -102,12 +108,13 @@ interface ImageItem {
 ```
 
 #### Step 3: 业务逻辑整合
+
 ```typescript
 // 浏览器压缩 (来自 browser-compress-image)
 const compressedBlob = await compress(item.file, {
   quality: item.quality,
   type: 'blob',
-  preserveExif: preserveExif.value,
+  preserveExif: preserveExif.value
 })
 
 // Electron 特有的 Node.js 压缩 (保留)
@@ -117,11 +124,13 @@ if (nodeCompressPresenter && !item.nodeCompressionStarted) {
 ```
 
 #### Step 4: 模板结构替换
+
 - 完全采用 browser-compress-image 的模板结构
 - 保留 Electron 特有的预览按钮和 macOS 标题栏
 - 集成两套样式系统
 
 #### Step 5: 样式系统集成
+
 - 采用 browser-compress-image 的完整样式
 - 保留 Electron 特有样式（macOS 标题栏、预览按钮）
 - 解决样式冲突和重复
@@ -129,6 +138,7 @@ if (nodeCompressPresenter && !item.nodeCompressionStarted) {
 ### 第三阶段：Electron 功能保留
 
 #### 1. macOS 原生支持
+
 ```vue
 <!-- macOS 透明标题栏区域 -->
 <div v-if="isMacOS" class="macos-titlebar">
@@ -150,6 +160,7 @@ if (nodeCompressPresenter && !item.nodeCompressionStarted) {
 ```
 
 #### 2. 预览窗口系统
+
 ```typescript
 // Electron 特有 - 预览压缩结果对比
 async function previewCompressionResult(item: ImageItem): Promise<void> {
@@ -182,6 +193,7 @@ async function previewCompressionResult(item: ImageItem): Promise<void> {
 ```
 
 #### 3. Node.js 压缩引擎
+
 ```typescript
 // Electron 特有 - Node压缩功能（不阻塞主流程）
 async function compressWithNode(item: ImageItem): Promise<void> {
@@ -196,11 +208,10 @@ async function compressWithNode(item: ImageItem): Promise<void> {
     const uint8Array = new Uint8Array(arrayBuffer)
 
     // 使用presenter调用node压缩
-    const result = await nodeCompressPresenter.compressImageFromBytes(
-      uint8Array, 
-      item.file.name, 
-      { quality: item.quality, preserveExif: false }
-    )
+    const result = await nodeCompressPresenter.compressImageFromBytes(uint8Array, item.file.name, {
+      quality: item.quality,
+      preserveExif: false
+    })
 
     // 处理压缩结果...
   } catch (error) {
@@ -212,6 +223,7 @@ async function compressWithNode(item: ImageItem): Promise<void> {
 ```
 
 #### 4. 自定义文件协议
+
 ```typescript
 // 生成自定义协议 URL
 const nodeResult: CompressionResult = {
@@ -227,6 +239,7 @@ const nodeResult: CompressionResult = {
 ### 第四阶段：代码质量和兼容性
 
 #### 1. TypeScript 错误修复
+
 ```typescript
 // 修复前：缺少 Vue 导入
 // 修复后：完整导入
@@ -237,28 +250,30 @@ const compressedBlob = await compress(item.file, {
   quality: item.quality,
   type: 'blob',
   preserveExif: preserveExif.value,
-  toolConfigs: enabledToolConfigs,  // 不存在的参数
+  toolConfigs: enabledToolConfigs // 不存在的参数
 })
 
 // 修复后：移除不兼容参数
 const compressedBlob = await compress(item.file, {
   quality: item.quality,
   type: 'blob',
-  preserveExif: preserveExif.value,
+  preserveExif: preserveExif.value
 })
 ```
 
 #### 2. 构建配置优化
+
 ```json
 // tsconfig.web.json
 {
   "exclude": [
-    "src/renderer/src/**/App_backup*.vue"  // 排除备份文件
+    "src/renderer/src/**/App_backup*.vue" // 排除备份文件
   ]
 }
 ```
 
 #### 3. 依赖管理优化
+
 ```bash
 # 移除冲突的类型定义
 pnpm remove @types/jszip  # JSZip 自带类型定义
@@ -267,21 +282,25 @@ pnpm remove @types/jszip  # JSZip 自带类型定义
 ## 架构设计原则
 
 ### 1. 向下兼容
+
 - 所有现有 Electron 功能保持不变
 - 用户配置和数据自动迁移
 - API 接口保持稳定
 
 ### 2. 功能增强
+
 - 双引擎压缩：浏览器 + Node.js
 - 自动选择最佳压缩结果
 - 保持原生桌面应用优势
 
 ### 3. 代码质量
+
 - 完整的 TypeScript 类型安全
 - 清晰的模块分离
 - 完善的错误处理
 
 ### 4. 性能优化
+
 - 异步非阻塞压缩
 - 智能缓存和内存管理
 - 优化的 IPC 通信
@@ -289,6 +308,7 @@ pnpm remove @types/jszip  # JSZip 自带类型定义
 ## 测试和验证
 
 ### 1. 功能测试清单
+
 - ✅ 基础图片压缩功能
 - ✅ 批量文件处理
 - ✅ 拖拽和粘贴操作
@@ -299,6 +319,7 @@ pnpm remove @types/jszip  # JSZip 自带类型定义
 - ✅ 自定义文件协议
 
 ### 2. 技术验证
+
 - ✅ TypeScript 编译通过
 - ✅ ESLint 代码规范检查
 - ✅ Electron 打包构建
@@ -307,16 +328,19 @@ pnpm remove @types/jszip  # JSZip 自带类型定义
 ## 未来优化建议
 
 ### 1. 性能优化
+
 - 考虑 Web Workers 来处理大文件压缩
 - 实现更智能的内存管理
 - 优化 IPC 通信效率
 
 ### 2. 功能扩展
+
 - 支持更多图片格式
 - 添加视频压缩功能
 - 实现云端压缩服务集成
 
 ### 3. 用户体验
+
 - 添加压缩进度动画
 - 实现更细粒度的质量控制
 - 支持批量导出配置
